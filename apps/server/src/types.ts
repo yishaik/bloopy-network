@@ -33,6 +33,15 @@ export interface StoryCard {
   reward?: { stars?: number; xp?: number };
 }
 
+export interface OnboardingState {
+  enabled: boolean;
+  status: "wake_choice" | "identity" | "complete";
+  wakeChoice?: "gentle" | "noise" | "snack";
+  visualMarker?: AvatarGenome["mark"];
+  wakeChoices: readonly {id:string;label:string;hint:string}[];
+  visualMarkers: readonly {id:string;label:string;symbol:string}[];
+}
+
 export interface TelegramUser {
   id: number;
   first_name: string;

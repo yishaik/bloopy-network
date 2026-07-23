@@ -1,1 +1,95 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f7f3eb"><title>Bloopy Network</title><link rel="stylesheet" href="/styles.css"><script src="https://telegram.org/js/telegram-web-app.js"></script></head><body><main id="app" class="shell"><section class="hero card"><div><p class="eyebrow">BLOOPY NETWORK</p><h1 id="creature-name">Waking up…</h1><p id="mood-line">A tiny world is assembling itself.</p></div><div class="avatar-wrap"><img id="avatar" alt="Your creature"></div><div class="stats"><span>⚡ <b id="energy">–</b></span><span>✦ <b id="level">–</b></span><span>XP <b id="xp">–</b></span></div></section><section class="actions card"><button data-action="explore">🧭 Explore</button><button data-action="talk">💬 Talk</button><button data-action="social">🫧 Meet</button><button data-action="rest">🛏 Rest</button></section><section class="card"><div class="section-head"><h2>What happened</h2><button id="share" class="quiet">Share</button></div><div id="story-feed" class="feed"></div></section><section class="card"><div class="section-head"><h2>Already living here</h2><span class="pill">seeded world</span></div><div id="npc-list" class="npc-grid"></div></section><section class="card controls"><button id="spawn-bot">🤖 Give my creature a Telegram bot</button><details><summary>Bring your own model</summary><form id="ai-form"><label>OpenAI-compatible endpoint<input name="baseUrl" placeholder="http://localhost:11434/v1" required></label><label>Model<input name="model" placeholder="qwen3:4b" required></label><label>API key<input name="apiKey" type="password" placeholder="local-or-provider-key" required></label><button type="submit">Save private brain connection</button><p class="hint">The game works without a model. BYOK only enriches narration.</p></form></details></section></main><div id="toast" role="status"></div><script type="module" src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f7f3eb">
+  <title>Bloopy Network</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <section id="genesis" class="genesis card" hidden>
+      <p class="eyebrow">YOUR STORY STARTS HERE</p>
+
+      <div id="wake-step" class="genesis-step" hidden>
+        <div class="nest" aria-hidden="true"><span>z</span><span>z</span><span>z</span></div>
+        <h1>Something is sleeping in the box</h1>
+        <p>The nest rises and falls with tiny breaths. How should this creature's first memory begin?</p>
+        <div id="wake-options" class="choice-stack"></div>
+      </div>
+
+      <div id="identity-step" class="genesis-step" hidden>
+        <div class="genesis-preview">
+          <img id="genesis-avatar" alt="Your waking creature">
+          <div>
+            <h1>It is watching you now</h1>
+            <p>Give it a name and one mark it can carry through every future evolution.</p>
+          </div>
+        </div>
+        <form id="identity-form">
+          <label>
+            Creature name
+            <input id="identity-name" name="name" minlength="2" maxlength="24" autocomplete="off" placeholder="Piko" required>
+          </label>
+          <fieldset>
+            <legend>Choose a permanent first mark</legend>
+            <div id="marker-options" class="marker-grid"></div>
+          </fieldset>
+          <button id="finish-genesis" type="submit">Wake up together</button>
+        </form>
+      </div>
+    </section>
+
+    <div id="game-shell" class="game-shell" hidden>
+      <section class="hero card">
+        <div>
+          <p class="eyebrow">BLOOPY NETWORK</p>
+          <h1 id="creature-name">Waking up…</h1>
+          <p id="mood-line">A tiny world is assembling itself.</p>
+        </div>
+        <div class="avatar-wrap"><img id="avatar" alt="Your creature"></div>
+        <div class="stats">
+          <span>⚡ <b id="energy">–</b></span>
+          <span>✦ <b id="level">–</b></span>
+          <span>XP <b id="xp">–</b></span>
+        </div>
+      </section>
+
+      <section class="actions card">
+        <button data-action="explore">🧭 Explore</button>
+        <button data-action="talk">💬 Talk</button>
+        <button data-action="social">🫧 Meet</button>
+        <button data-action="rest">🛏 Rest</button>
+      </section>
+
+      <section class="card">
+        <div class="section-head"><h2>What happened</h2><button id="share" class="quiet">Share</button></div>
+        <div id="story-feed" class="feed"></div>
+      </section>
+
+      <section class="card">
+        <div class="section-head"><h2>Already living here</h2><span class="pill">seeded world</span></div>
+        <div id="npc-list" class="npc-grid"></div>
+      </section>
+
+      <section class="card controls">
+        <button id="spawn-bot">🤖 Give my creature a Telegram bot</button>
+        <details>
+          <summary>Bring your own model</summary>
+          <form id="ai-form">
+            <label>OpenAI-compatible endpoint<input name="baseUrl" placeholder="https://provider.example/v1" required></label>
+            <label>Model<input name="model" placeholder="qwen3:4b" required></label>
+            <label>API key<input name="apiKey" type="password" placeholder="private-provider-key" required></label>
+            <button type="submit">Save private brain connection</button>
+            <p class="hint">The game works without a model. BYOK enriches narration but cannot change game rules.</p>
+          </form>
+        </details>
+      </section>
+    </div>
+  </main>
+  <div id="toast" role="status"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+name: Narrative AI Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: Comma-separated OpenRouter/OpenAI-compatible model IDs
+        required: true
+        default: qwen/qwen3.5-9b,qwen/qwen3.6-flash,google/gemini-3.1-flash-lite
+      base_url:
+        description: OpenAI-compatible API base URL
+        required: true
+        default: https://openrouter.ai/api/v1
+      fixture_limit:
+        description: Number of versioned fixtures per model
+        required: true
+        default: "40"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: narrative-ai-evaluation
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: postgres://bloopy:bloopy@localhost:5432/bloopy
+      APP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      PUBLIC_BASE_URL: https://github.com/yishaik/bloopy-network
+      AI_EVAL_BASE_URL: ${{ inputs.base_url }}
+      AI_EVAL_API_KEY: ${{ secrets.OPENROUTER_EVAL_API_KEY }}
+      AI_EVAL_MODELS: ${{ inputs.models }}
+      AI_EVAL_FIXTURE_LIMIT: ${{ inputs.fixture_limit }}
+      AI_EVAL_OUTPUT_DIR: artifacts/narrative-eval
+      AI_EVAL_TIMEOUT_MS: "12000"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --silent
+      - name: Validate evaluation secret
+        run: test -n "$AI_EVAL_API_KEY" || (echo "Missing repository secret OPENROUTER_EVAL_API_KEY" && exit 1)
+      - name: Validate evaluation corpus
+        run: npm test -- narrative-eval-fixtures.test.ts
+      - name: Run model comparison
+        run: npm run eval:narrative
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: narrative-eval-${{ github.run_number }}
+          path: artifacts/narrative-eval
+          if-no-files-found: warn
+          retention-days: 30

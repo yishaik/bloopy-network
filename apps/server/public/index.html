@@ -57,11 +57,34 @@
         </div>
       </section>
 
-      <section class="actions card">
+      <section id="story-arc" class="arc-card card" hidden>
+        <div class="arc-heading">
+          <div>
+            <p class="eyebrow">FIRST ADVENTURE</p>
+            <h2>The door that was not there yesterday</h2>
+          </div>
+          <span id="arc-route" class="pill" hidden></span>
+        </div>
+        <div class="arc-progress" aria-label="Story progress"><span id="arc-progress-fill"></span></div>
+        <p id="arc-progress-label" class="arc-progress-label"></p>
+        <article class="arc-scene">
+          <h3 id="arc-title"></h3>
+          <p id="arc-body"></p>
+          <div id="arc-choices" class="arc-choices"></div>
+        </article>
+        <p id="arc-complete" class="arc-complete" hidden>The first impossible thing has been survived. A new message will arrive later.</p>
+      </section>
+
+      <section id="free-actions" class="actions card">
         <button data-action="explore">🧭 Explore</button>
         <button data-action="talk">💬 Talk</button>
         <button data-action="social">🫧 Meet</button>
         <button data-action="rest">🛏 Rest</button>
+      </section>
+
+      <section id="inventory-card" class="card" hidden>
+        <div class="section-head"><h2>Things worth keeping</h2><span class="pill">inventory</span></div>
+        <div id="inventory-list" class="inventory-grid"></div>
       </section>
 
       <section class="card">

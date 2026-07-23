@@ -31,7 +31,16 @@ jobs:
           path: typecheck.log
       - if: steps.typecheck.outcome == 'failure'
         run: cat typecheck.log && exit 1
-      - run: npm test
+      - id: tests
+        continue-on-error: true
+        run: npm test > test.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: steps.tests.outcome == 'failure'
+        with:
+          name: test-log
+          path: test.log
+      - if: steps.tests.outcome == 'failure'
+        run: cat test.log && exit 1
       - run: npm run build
 
   migration:

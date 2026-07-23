@@ -10,6 +10,7 @@ import { resolveRequestUser } from "./auth.js";
 import { renderAvatar } from "./avatar.js";
 import { config } from "./config.js";
 import { db, withTransaction } from "./db.js";
+import { applyImpossibleDoorChoice, ensureImpossibleDoorArc, getInventory, updateDoorStoryNarrative } from "./door-game.js";
 import { assertOnboardingComplete, bootstrapPlayer, completeOnboarding, getDashboard, performAction, saveAIProfile, selectWakeChoice } from "./game.js";
 import { migrate } from "./migrate.js";
 import { buildStory } from "./story.js";
@@ -23,7 +24,7 @@ await app.register(cors,{origin:false});
 await app.register(rateLimit,{max:120,timeWindow:"1 minute"});
 await app.register(fastifyStatic,{root,prefix:"/"});
 
-app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.3.0"};});
+app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.4.0"};});
 
 async function authenticatedPlayer(headers:Record<string,string|string[]|undefined>) {
   const initData=typeof headers["x-telegram-init-data"]==="string"?headers["x-telegram-init-data"]:undefined;
@@ -36,7 +37,15 @@ async function logNarrative(playerId:string,creatureId:string,sceneId:string,met
   await db.query(`INSERT INTO analytics_events (player_id,creature_id,event_name,properties) VALUES ($1,$2,$3,$4)`,[playerId,creatureId,metadata.usedAI?"ai_enrichment_used":"ai_fallback_used",JSON.stringify({sceneId,provider:metadata.provider,model:metadata.model,promptVersion:metadata.promptVersion,reason:metadata.fallbackReason,latencyMs:metadata.latencyMs})]);
 }
 
-app.get("/api/bootstrap",async(request)=>{const {player}=await authenticatedPlayer(request.headers);return withTransaction((client)=>getDashboard(client,player.id));});
+app.get("/api/bootstrap",async(request)=>{
+  const {player}=await authenticatedPlayer(request.headers);
+  return withTransaction(async(client)=>{
+    const dashboard=await getDashboard(client,player.id);
+    const storyArc=dashboard.onboarding.status==="complete"?await ensureImpossibleDoorArc(client,player.id,dashboard.creature.id):null;
+    const inventory=await getInventory(client,dashboard.creature.id);
+    return {...dashboard,storyArc,inventory};
+  });
+});
 
 app.post("/api/onboarding/wake",async(request)=>{
   const body=z.object({choice:z.enum(["gentle","noise","snack"])}).parse(request.body);
@@ -48,6 +57,21 @@ app.post("/api/onboarding/identity",async(request)=>{
   const body=z.object({name:z.string().min(1).max(80),marker:z.enum(["moon","star","dot"])}).parse(request.body);
   const {creature,player}=await authenticatedPlayer(request.headers);
   return withTransaction((client)=>completeOnboarding(client,player.id,creature.id,body));
+});
+
+app.post("/api/story/impossible-door/choice",async(request)=>{
+  const body=z.object({beatId:z.string().regex(/^[a-z0-9_-]{2,80}$/),choiceId:z.string().regex(/^[a-z0-9_-]{2,80}$/)}).parse(request.body);
+  const {creature,player}=await authenticatedPlayer(request.headers);
+  await withTransaction((client)=>assertOnboardingComplete(client,creature.id));
+  const result=await withTransaction((client)=>applyImpossibleDoorChoice(client,player.id,creature.id,body));
+  if(!result.replayed&&result.storyEntryId&&result.narrative) {
+    const profileResult=await db.query("SELECT base_url,model,encrypted_api_key FROM ai_profiles WHERE player_id=$1 AND enabled=true",[player.id]);
+    const narrative=await enrichStory(profileResult.rows[0]??null,result.storyArc.story,creature.personality.voice,result.narrative);
+    await logNarrative(player.id,creature.id,result.narrative.sceneId,narrative.metadata).catch((error)=>app.log.warn({error,sceneId:result.narrative?.sceneId},"AI telemetry failed"));
+    await withTransaction((client)=>updateDoorStoryNarrative(client,result.storyEntryId as string,narrative.story.title,narrative.story.body));
+    result.storyArc.story=narrative.story;
+  }
+  return result;
 });
 
 app.post("/api/actions",async(request)=>{
@@ -72,8 +96,8 @@ app.post("/telegram/managed/:botId/:secret",async(request,reply)=>{const params=
 app.setErrorHandler((error,_request,reply)=>{
   app.log.error(error);
   const message=error instanceof Error?error.message:"unknown error";
-  const conflict=message.includes("already selected")||message.includes("must be completed")||message.includes("must be selected first");
-  const badInput=message.startsWith("name ")||message.includes("unsupported characters");
+  const conflict=message.includes("already selected")||message.includes("must be completed")||message.includes("must be selected first")||message.includes("already moved on")||message.includes("already complete")||message.includes("not enough");
+  const badInput=message.startsWith("name ")||message.includes("unsupported characters")||message.includes("choice is not available");
   const status=error instanceof z.ZodError||badInput?400:message.includes("auth")||message.includes("signature")?401:conflict?409:500;
   reply.code(status).send({error:status===500?"internal error":message});
 });

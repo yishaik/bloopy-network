@@ -26,7 +26,7 @@ function escapeHtml(value=""){
 }
 
 function storyCard(story){
-  const choices=Array.isArray(story.choices)?story.choices:[];
+  const choices=(Array.isArray(story.choices)?story.choices:[]).filter((choice)=>choice.action!=="story");
   return `<article class="story"><h3>${escapeHtml(story.title)}</h3><p>${escapeHtml(story.body)}</p>${choices.length?`<div class="choices">${choices.map((choice)=>`<button data-action="${escapeHtml(choice.action)}">${escapeHtml(choice.label)}</button>`).join("")}</div>`:""}</article>`;
 }
 
@@ -60,6 +60,47 @@ function renderGenesis(onboarding){
   }
 }
 
+function routeLabel(route){
+  if(route==="numa") return "With Numa";
+  if(route==="sock") return "With Dr. Sock";
+  if(route==="secret") return "Secret route";
+  return "";
+}
+
+function renderStoryArc(){
+  const arc=state.storyArc;
+  if(!arc){
+    $("story-arc").hidden=true;
+    $("free-actions").hidden=false;
+    return;
+  }
+  $("story-arc").hidden=false;
+  const progress=Math.max(0,Math.min(100,Math.round((arc.chapter/arc.totalChapters)*100)));
+  $("arc-progress-fill").style.width=`${progress}%`;
+  $("arc-progress-label").textContent=`Chapter ${arc.chapter} of ${arc.totalChapters}`;
+  $("arc-title").textContent=arc.story.title;
+  $("arc-body").textContent=arc.story.body;
+  const route=routeLabel(arc.route);
+  $("arc-route").hidden=!route;
+  $("arc-route").textContent=route;
+  $("arc-choices").innerHTML=(arc.story.choices||[]).map((choice)=>`<button data-arc-choice="${escapeHtml(choice.id)}">${escapeHtml(choice.label)}</button>`).join("");
+  const completed=arc.status==="completed";
+  $("arc-complete").hidden=!completed;
+  $("arc-choices").hidden=completed;
+  $("free-actions").hidden=!completed;
+}
+
+function renderInventory(){
+  const items=state.inventory||[];
+  $("inventory-card").hidden=items.length===0;
+  $("inventory-list").innerHTML=items.map((item)=>`
+    <article class="inventory-item">
+      <span class="inventory-icon">${escapeHtml(item.icon)}</span>
+      <div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.description)}</small></div>
+      <span class="inventory-count">${Number(item.quantity)>1?`×${Number(item.quantity)}`:""}</span>
+    </article>`).join("");
+}
+
 function renderGame(){
   $("genesis").hidden=true;
   $("game-shell").hidden=false;
@@ -70,6 +111,8 @@ function renderGame(){
   $("energy").textContent=creature.energy;
   $("level").textContent=`Lv ${creature.level}`;
   $("xp").textContent=creature.xp;
+  renderStoryArc();
+  renderInventory();
   $("story-feed").innerHTML=(state.stories||[]).map(storyCard).join("");
   $("npc-list").innerHTML=(state.npcs||[]).map((npc)=>`<div class="npc"><img src="/api/creatures/${npc.id}/avatar.svg"><b>${escapeHtml(npc.name)}</b><small>${escapeHtml(npc.current_location.replaceAll("_"," "))}</small></div>`).join("");
 }
@@ -112,6 +155,20 @@ async function finishGenesis(event){
   }
 }
 
+async function chooseArc(choiceId){
+  const arc=state.storyArc;
+  if(!arc||arc.status!=="active") return;
+  setButtonsDisabled($("arc-choices"),true);
+  try{
+    const result=await api("/api/story/impossible-door/choice",{method:"POST",body:JSON.stringify({beatId:arc.currentBeat,choiceId})});
+    toast(result.storyArc.story.title);
+    await refresh();
+  }catch(error){
+    toast(error.message);
+    setButtonsDisabled($("arc-choices"),false);
+  }
+}
+
 async function act(action){
   document.querySelectorAll("button[data-action]").forEach((button)=>{button.disabled=true;});
   try{
@@ -139,6 +196,9 @@ document.addEventListener("click",(event)=>{
     });
     return;
   }
+
+  const arcButton=event.target.closest("button[data-arc-choice]");
+  if(arcButton){void chooseArc(arcButton.dataset.arcChoice);return;}
 
   const actionButton=event.target.closest("button[data-action]");
   if(actionButton) void act(actionButton.dataset.action);

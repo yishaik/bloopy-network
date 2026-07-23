@@ -75,3 +75,13 @@ CREATE TABLE daily_return_instances (
   UNIQUE(creature_id,world_id,return_date)
 );
 CREATE INDEX daily_return_active_idx ON daily_return_instances(creature_id,status,return_date DESC);
+
+CREATE TABLE player_daily_activity (
+  player_id uuid NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  activity_date date NOT NULL,
+  first_open_at timestamptz NOT NULL DEFAULT now(),
+  last_open_at timestamptz NOT NULL DEFAULT now(),
+  open_count integer NOT NULL DEFAULT 1 CHECK (open_count > 0),
+  PRIMARY KEY (player_id,activity_date)
+);
+CREATE INDEX player_daily_activity_date_idx ON player_daily_activity(activity_date,player_id);

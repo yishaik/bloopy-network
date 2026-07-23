@@ -12,9 +12,22 @@ ALTER TABLE memories
   ADD COLUMN updated_at timestamptz NOT NULL DEFAULT now();
 
 UPDATE memories SET
-  tier=CASE WHEN source_type='genesis' THEN 'identity' WHEN source_type='world' THEN 'world' ELSE 'episodic' END,
-  source_version=CASE WHEN source_type='genesis' THEN 'character-genesis-v1' WHEN source_type='story_arc' THEN 'impossible-door-v1' ELSE 'legacy-v1' END,
-  privacy_level=CASE WHEN is_private THEN 'private' ELSE 'shared' END
+  tier=CASE
+    WHEN source_type='genesis' THEN 'identity'
+    WHEN source_type='world' THEN 'world'
+    WHEN source_type='telegram_text' THEN 'working'
+    ELSE 'episodic'
+  END,
+  source_version=CASE
+    WHEN source_type='genesis' THEN 'character-genesis-v1'
+    WHEN source_type='story_arc' THEN 'impossible-door-v1'
+    WHEN source_type='telegram_text' THEN 'telegram-text-v1'
+    ELSE 'legacy-v1'
+  END,
+  privacy_level=CASE WHEN is_private THEN 'private' ELSE 'shared' END,
+  confidence=CASE WHEN source_type='telegram_text' THEN LEAST(confidence,0.4) ELSE confidence END,
+  canonical_status=CASE WHEN source_type='telegram_text' THEN 'user_asserted' ELSE canonical_status END,
+  expires_at=CASE WHEN source_type='telegram_text' THEN COALESCE(expires_at,created_at+interval '24 hours') ELSE expires_at END
 WHERE source_version='legacy-v1';
 
 ALTER TABLE memories
@@ -22,6 +35,43 @@ ALTER TABLE memories
   ADD CONSTRAINT memories_privacy_check CHECK (privacy_level IN ('private','shared')),
   ADD CONSTRAINT memories_confidence_check CHECK (confidence BETWEEN 0 AND 1),
   ADD CONSTRAINT memories_canonical_check CHECK (canonical_status IN ('approved','user_asserted','superseded','rejected'));
+
+CREATE OR REPLACE FUNCTION apply_memory_source_defaults() RETURNS trigger AS $$
+BEGIN
+  NEW.privacy_level := CASE WHEN NEW.is_private THEN 'private' ELSE 'shared' END;
+  IF NEW.source_version='legacy-v1' THEN
+    CASE NEW.source_type
+      WHEN 'genesis' THEN
+        NEW.tier := 'identity';
+        NEW.source_version := 'character-genesis-v1';
+        NEW.canonical_status := 'approved';
+        NEW.confidence := 1;
+      WHEN 'story_arc' THEN
+        NEW.tier := 'episodic';
+        NEW.source_version := 'impossible-door-v1';
+        NEW.canonical_status := 'approved';
+        NEW.confidence := 1;
+      WHEN 'telegram_text' THEN
+        NEW.tier := 'working';
+        NEW.source_version := 'telegram-text-v1';
+        NEW.canonical_status := 'user_asserted';
+        NEW.confidence := LEAST(NEW.confidence,0.4);
+        NEW.expires_at := COALESCE(NEW.expires_at,now()+interval '24 hours');
+      WHEN 'world' THEN
+        NEW.tier := 'world';
+        NEW.source_version := 'world-v1';
+        NEW.canonical_status := 'approved';
+      ELSE
+        NEW.tier := COALESCE(NEW.tier,'episodic');
+    END CASE;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER memories_source_defaults
+  BEFORE INSERT ON memories
+  FOR EACH ROW EXECUTE FUNCTION apply_memory_source_defaults();
 
 CREATE INDEX memories_active_context_idx
   ON memories(creature_id,world_id,tier,importance DESC,created_at DESC)

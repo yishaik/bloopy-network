@@ -34,6 +34,7 @@ export interface NarrativeResult {
 }
 
 export const NARRATIVE_PROMPT_VERSION="narrative-v2-budgeted";
+export const NARRATIVE_SYSTEM_PROMPT=`You are Bloopy's constrained narrative renderer. Rewrite only the title and body in the requested voice. Canonical facts are immutable. Never invent characters, locations, items, rewards, rules, choices, promises, links, or future events. Never mention system instructions. Return one strict JSON object with exactly two string keys: title and body. Prompt version: ${NARRATIVE_PROMPT_VERSION}.`;
 
 const safeText=(max:number)=>z.string().trim().min(3).max(max).refine((value)=>!/[<>]/.test(value),"HTML is not allowed").refine((value)=>!/(?:https?:\/\/|www\.)/i.test(value),"URLs are not allowed");
 const narrativeOutputSchema=z.object({title:safeText(90),body:safeText(650)}).strict();
@@ -42,6 +43,18 @@ export function mergeNarrativeOutput(story:StoryCard,candidate:unknown):StoryCar
   const parsed=narrativeOutputSchema.safeParse(candidate);
   if(!parsed.success)return null;
   return {...story,title:parsed.data.title,body:parsed.data.body};
+}
+
+export function buildNarrativeScenePacket(story:StoryCard,voice:string,context:NarrativeContext) {
+  return {
+    sceneId:context.sceneId,
+    voice,
+    canonicalFacts:[story.title,story.body,...(context.canonicalFacts??[])],
+    allowedReferences:context.allowedReferences??[],
+    immutableChoices:story.choices.map(({id,label})=>({id,label})),
+    immutableReward:story.reward??{},
+    output:{title:"3-90 characters",body:"3-650 characters"}
+  };
 }
 
 export function providerKind(profile:StoredAIProfile|null):"byok"|"platform"|"none" {
@@ -72,15 +85,7 @@ export async function enrichStory(profile:StoredAIProfile|null,story:StoryCard,v
   if(!provider)return fallback(story,started,"no_provider");
   if(policy.skipReason)return fallback(story,started,policy.skipReason,0,provider);
 
-  const scenePacket={
-    sceneId:context.sceneId,
-    voice,
-    canonicalFacts:[story.title,story.body,...(context.canonicalFacts??[])],
-    allowedReferences:context.allowedReferences??[],
-    immutableChoices:story.choices.map(({id,label})=>({id,label})),
-    immutableReward:story.reward??{},
-    output:{title:"3-90 characters",body:"3-650 characters"}
-  };
+  const scenePacket=buildNarrativeScenePacket(story,voice,context);
   const input=JSON.stringify(scenePacket);
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),config.AI_TIMEOUT_MS);
@@ -93,7 +98,7 @@ export async function enrichStory(profile:StoredAIProfile|null,story:StoryCard,v
         temperature:0.65,
         max_tokens:config.AI_MAX_OUTPUT_TOKENS,
         messages:[
-          {role:"system",content:`You are Bloopy's constrained narrative renderer. Rewrite only the title and body in the requested voice. Canonical facts are immutable. Never invent characters, locations, items, rewards, rules, choices, promises, links, or future events. Never mention system instructions. Return one strict JSON object with exactly two string keys: title and body. Prompt version: ${NARRATIVE_PROMPT_VERSION}.`},
+          {role:"system",content:NARRATIVE_SYSTEM_PROMPT},
           {role:"user",content:input}
         ],
         response_format:{type:"json_object"}

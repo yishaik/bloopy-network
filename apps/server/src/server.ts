@@ -5,7 +5,8 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { z } from "zod";
-import { enrichStory, type NarrativeMetadata } from "./ai.js";
+import { enrichStory, providerKind, type NarrativeContext, type NarrativeMetadata, type StoredAIProfile } from "./ai.js";
+import { getAIUsageStatus, reserveAIRequest } from "./ai-policy.js";
 import { resolveRequestUser } from "./auth.js";
 import { renderAvatar } from "./avatar.js";
 import { config } from "./config.js";
@@ -15,7 +16,7 @@ import { assertOnboardingComplete, bootstrapPlayer, completeOnboarding, getDashb
 import { migrate } from "./migrate.js";
 import { buildStory } from "./story.js";
 import { configureManagerWebhook, dispatchOutbox, handleManagedBotUpdate, handleManagerUpdate, managedBotCreationLink, startBotConversation, type TelegramUpdate } from "./telegram.js";
-import type { AvatarGenome } from "./types.js";
+import type { AvatarGenome, StoryCard } from "./types.js";
 import { processDueEvents } from "./worker.js";
 
 const app=Fastify({logger:{level:config.NODE_ENV==="production"?"info":"debug"}});
@@ -24,7 +25,7 @@ await app.register(cors,{origin:false});
 await app.register(rateLimit,{max:120,timeWindow:"1 minute"});
 await app.register(fastifyStatic,{root,prefix:"/"});
 
-app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.4.0"};});
+app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.5.0"};});
 
 async function authenticatedPlayer(headers:Record<string,string|string[]|undefined>) {
   const initData=typeof headers["x-telegram-init-data"]==="string"?headers["x-telegram-init-data"]:undefined;
@@ -32,9 +33,32 @@ async function authenticatedPlayer(headers:Record<string,string|string[]|undefin
   return withTransaction((client)=>bootstrapPlayer(client,user));
 }
 
+async function loadAIProfile(playerId:string):Promise<StoredAIProfile|null> {
+  const result=await db.query("SELECT base_url,model,encrypted_api_key FROM ai_profiles WHERE player_id=$1 AND enabled=true",[playerId]);
+  return result.rows[0]??null;
+}
+
 async function logNarrative(playerId:string,creatureId:string,sceneId:string,metadata:NarrativeMetadata) {
-  await db.query(`INSERT INTO ai_generation_logs (player_id,creature_id,scene_id,provider,model,prompt_version,used_ai,fallback_reason,latency_ms,input_chars,output_chars) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[playerId,creatureId,sceneId,metadata.provider,metadata.model??null,metadata.promptVersion,metadata.usedAI,metadata.fallbackReason??null,metadata.latencyMs,metadata.inputChars,metadata.outputChars]);
-  await db.query(`INSERT INTO analytics_events (player_id,creature_id,event_name,properties) VALUES ($1,$2,$3,$4)`,[playerId,creatureId,metadata.usedAI?"ai_enrichment_used":"ai_fallback_used",JSON.stringify({sceneId,provider:metadata.provider,model:metadata.model,promptVersion:metadata.promptVersion,reason:metadata.fallbackReason,latencyMs:metadata.latencyMs})]);
+  await db.query(`INSERT INTO ai_generation_logs (player_id,creature_id,scene_id,provider,model,prompt_version,used_ai,fallback_reason,latency_ms,input_chars,output_chars,prompt_tokens,completion_tokens,estimated_cost_microusd)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,[
+    playerId,creatureId,sceneId,metadata.provider,metadata.model??null,metadata.promptVersion,metadata.usedAI,metadata.fallbackReason??null,
+    metadata.latencyMs,metadata.inputChars,metadata.outputChars,metadata.promptTokens??null,metadata.completionTokens??null,metadata.estimatedCostMicrousd
+  ]);
+  await db.query(`INSERT INTO analytics_events (player_id,creature_id,event_name,properties) VALUES ($1,$2,$3,$4)`,[playerId,creatureId,metadata.usedAI?"ai_enrichment_used":"ai_fallback_used",JSON.stringify({sceneId,provider:metadata.provider,model:metadata.model,promptVersion:metadata.promptVersion,reason:metadata.fallbackReason,latencyMs:metadata.latencyMs,promptTokens:metadata.promptTokens,completionTokens:metadata.completionTokens,estimatedCostMicrousd:metadata.estimatedCostMicrousd})]);
+}
+
+async function enrichForPlayer(playerId:string,creatureId:string,voice:string,story:StoryCard,context:NarrativeContext) {
+  const profile=await loadAIProfile(playerId);
+  const kind=providerKind(profile);
+  let skipReason:string|undefined;
+  if(kind!=="none") {
+    const date=new Date().toISOString().slice(0,10);
+    const decision=await withTransaction((client)=>reserveAIRequest(client,playerId,kind,{priority:context.priority??"routine",sampleKey:`${playerId}:${context.sceneId}:${date}`}));
+    if(!decision.allowed)skipReason=`policy_${decision.reason??"denied"}`;
+  }
+  const narrative=await enrichStory(profile,story,voice,context,skipReason?{skipReason}:{});
+  await logNarrative(playerId,creatureId,context.sceneId,narrative.metadata).catch((error)=>app.log.warn({error,sceneId:context.sceneId},"AI telemetry failed"));
+  return narrative;
 }
 
 app.get("/api/bootstrap",async(request)=>{
@@ -43,7 +67,9 @@ app.get("/api/bootstrap",async(request)=>{
     const dashboard=await getDashboard(client,player.id);
     const storyArc=dashboard.onboarding.status==="complete"?await ensureImpossibleDoorArc(client,player.id,dashboard.creature.id):null;
     const inventory=await getInventory(client,dashboard.creature.id);
-    return {...dashboard,storyArc,inventory};
+    const profile=await client.query("SELECT 1 FROM ai_profiles WHERE player_id=$1 AND enabled=true",[player.id]);
+    const ai=await getAIUsageStatus(client,player.id,Boolean(profile.rowCount));
+    return {...dashboard,storyArc,inventory,ai};
   });
 });
 
@@ -65,9 +91,7 @@ app.post("/api/story/impossible-door/choice",async(request)=>{
   await withTransaction((client)=>assertOnboardingComplete(client,creature.id));
   const result=await withTransaction((client)=>applyImpossibleDoorChoice(client,player.id,creature.id,body));
   if(!result.replayed&&result.storyEntryId&&result.narrative) {
-    const profileResult=await db.query("SELECT base_url,model,encrypted_api_key FROM ai_profiles WHERE player_id=$1 AND enabled=true",[player.id]);
-    const narrative=await enrichStory(profileResult.rows[0]??null,result.storyArc.story,creature.personality.voice,result.narrative);
-    await logNarrative(player.id,creature.id,result.narrative.sceneId,narrative.metadata).catch((error)=>app.log.warn({error,sceneId:result.narrative?.sceneId},"AI telemetry failed"));
+    const narrative=await enrichForPlayer(player.id,creature.id,creature.personality.voice,result.storyArc.story,{...result.narrative,priority:"high"});
     await withTransaction((client)=>updateDoorStoryNarrative(client,result.storyEntryId as string,narrative.story.title,narrative.story.body));
     result.storyArc.story=narrative.story;
   }
@@ -78,11 +102,9 @@ app.post("/api/actions",async(request)=>{
   const body=z.object({action:z.enum(["explore","rest","talk","help","social"])}).parse(request.body);
   const {creature,player}=await authenticatedPlayer(request.headers);
   await withTransaction((client)=>assertOnboardingComplete(client,creature.id));
-  const profileResult=await db.query("SELECT base_url,model,encrypted_api_key FROM ai_profiles WHERE player_id=$1 AND enabled=true",[player.id]);
   const baseStory=buildStory(body.action,creature.name,creature.personality,Date.now());
   const sceneId=`game_action:${body.action}`;
-  const narrative=await enrichStory(profileResult.rows[0]??null,baseStory,creature.personality.voice,{sceneId,canonicalFacts:[`${creature.name} is the player's creature.`,`The action is ${body.action}.`],allowedReferences:[creature.name,"Numa","Dr. Sock","Momo"]});
-  await logNarrative(player.id,creature.id,sceneId,narrative.metadata).catch((error)=>app.log.warn({error,sceneId},"AI telemetry failed"));
+  const narrative=await enrichForPlayer(player.id,creature.id,creature.personality.voice,baseStory,{sceneId,priority:"routine",canonicalFacts:[`${creature.name} is the player's creature.`,`The action is ${body.action}.`],allowedReferences:[creature.name,"Numa","Dr. Sock","Momo"]});
   return withTransaction((client)=>performAction(client,creature.id,body.action,narrative.story));
 });
 

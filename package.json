@@ -9,7 +9,8 @@
     "start": "npm run start -w @bloopy/server",
     "typecheck": "npm run typecheck -w @bloopy/server",
     "test": "npm run test -w @bloopy/server",
-    "migrate": "npm run migrate -w @bloopy/server"
+    "migrate": "npm run migrate -w @bloopy/server",
+    "eval:narrative": "npm run eval:narrative -w @bloopy/server"
   },
   "engines": { "node": ">=22" }
 }

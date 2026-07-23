@@ -97,16 +97,28 @@
         <div id="npc-list" class="npc-grid"></div>
       </section>
 
+      <section id="ai-status-card" class="card mind-card">
+        <div class="section-head">
+          <div><p class="eyebrow">BLOOPY MIND</p><h2 id="ai-mode">Authored mind</h2></div>
+          <span id="ai-mode-pill" class="pill">safe fallback</span>
+        </div>
+        <p id="ai-description" class="mind-description">Every story remains playable through authored narration.</p>
+        <div id="ai-usage" class="mind-usage" hidden>
+          <div class="mind-meter" aria-label="Daily AI usage"><span id="ai-usage-fill"></span></div>
+          <small id="ai-usage-label"></small>
+        </div>
+      </section>
+
       <section class="card controls">
         <button id="spawn-bot">🤖 Give my creature a Telegram bot</button>
         <details>
-          <summary>Bring your own model</summary>
+          <summary>Advanced model connection</summary>
           <form id="ai-form">
             <label>OpenAI-compatible endpoint<input name="baseUrl" placeholder="https://provider.example/v1" required></label>
             <label>Model<input name="model" placeholder="qwen3:4b" required></label>
             <label>API key<input name="apiKey" type="password" placeholder="private-provider-key" required></label>
             <button type="submit">Save private brain connection</button>
-            <p class="hint">The game works without a model. BYOK enriches narration but cannot change game rules.</p>
+            <p class="hint">Advanced connections enrich narration but never change game rules, choices or rewards.</p>
           </form>
         </details>
       </section>

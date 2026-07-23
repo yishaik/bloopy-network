@@ -1,5 +1,4 @@
 import type pg from "pg";
-import { config } from "./config.js";
 import {
   buildImpossibleDoorBeat,
   IMPOSSIBLE_DOOR_ARC_ID,
@@ -9,6 +8,10 @@ import {
   type DoorRoute,
   type DoorStoryState
 } from "./impossible-door.js";
+
+const impossibleDoorEnabled=process.env.IMPOSSIBLE_DOOR_ENABLED!=="false";
+const requestedCliffhangerDelay=Number(process.env.DOOR_CLIFFHANGER_DELAY_SECONDS??3600);
+const doorCliffhangerDelaySeconds=Number.isFinite(requestedCliffhangerDelay)&&requestedCliffhangerDelay>0?Math.floor(requestedCliffhangerDelay):3600;
 
 export interface ImpossibleDoorArcView {
   id:string;
@@ -52,7 +55,7 @@ export async function getInventory(client:pg.PoolClient,creatureId:string) {
 }
 
 export async function ensureImpossibleDoorArc(client:pg.PoolClient,playerId:string,creatureId:string):Promise<ImpossibleDoorArcView|null> {
-  if(!config.IMPOSSIBLE_DOOR_ENABLED) return null;
+  if(!impossibleDoorEnabled) return null;
   const onboarding=await client.query("SELECT status FROM onboarding_states WHERE creature_id=$1",[creatureId]);
   if(onboarding.rows[0]?.status!=="complete") return null;
 
@@ -78,7 +81,7 @@ export async function ensureImpossibleDoorArc(client:pg.PoolClient,playerId:stri
 }
 
 export async function getImpossibleDoorArc(client:pg.PoolClient,creatureId:string):Promise<ImpossibleDoorArcView|null> {
-  if(!config.IMPOSSIBLE_DOOR_ENABLED) return null;
+  if(!impossibleDoorEnabled) return null;
   const result=await client.query(`SELECT sai.*,c.name FROM story_arc_instances sai JOIN creatures c ON c.id=sai.creature_id WHERE sai.creature_id=$1 AND sai.arc_id=$2`,[creatureId,IMPOSSIBLE_DOOR_ARC_ID]);
   const row=result.rows[0];
   if(!row) return null;
@@ -166,8 +169,8 @@ export async function applyImpossibleDoorChoice(client:pg.PoolClient,playerId:st
     creatureId,instance.id,nextBeat.id,persistedStory.title,persistedStory.body,JSON.stringify(persistedStory.choices),JSON.stringify(persistedStory.reward)
   ]);
 
-  await client.query(`UPDATE quest_instances SET status=$3,progress=$4,updated_at=now() WHERE quest_id='impossible-door' AND creature_id=$1`,[
-    creatureId,instance.id,transition.status,JSON.stringify({arcId:instance.id,beat:transition.nextBeat,chapter:nextBeat.chapter,route:transition.route})
+  await client.query(`UPDATE quest_instances SET status=$2,progress=$3,updated_at=now() WHERE quest_id='impossible-door' AND creature_id=$1`,[
+    creatureId,transition.status,JSON.stringify({arcId:instance.id,beat:transition.nextBeat,chapter:nextBeat.chapter,route:transition.route})
   ]);
   await recordAnalytics(client,playerId,creatureId,"story_arc_choice",{arcId:IMPOSSIBLE_DOOR_ARC_ID,beatId:input.beatId,choiceId:input.choiceId,nextBeat:transition.nextBeat,route:transition.route});
 
@@ -179,7 +182,7 @@ export async function applyImpossibleDoorChoice(client:pg.PoolClient,playerId:st
       await client.query(`INSERT INTO world_events (creature_id,event_type,payload,due_at)
         SELECT $1,'door_cliffhanger',$2,now()+($3||' seconds')::interval
         WHERE NOT EXISTS (SELECT 1 FROM world_events WHERE creature_id=$1 AND event_type='door_cliffhanger' AND payload->>'arcInstanceId'=$4)`,[
-        creatureId,JSON.stringify({...transition.cliffhanger,arcInstanceId:instance.id,action:"talk"}),config.DOOR_CLIFFHANGER_DELAY_SECONDS,String(instance.id)
+        creatureId,JSON.stringify({...transition.cliffhanger,arcInstanceId:instance.id,action:"talk"}),doorCliffhangerDelaySeconds,String(instance.id)
       ]);
     }
     await recordAnalytics(client,playerId,creatureId,"story_arc_completed",{arcId:IMPOSSIBLE_DOOR_ARC_ID,route:transition.route,doorAction:transition.state.doorAction,finalChoice:transition.state.finalChoice,epilogue:transition.state.epilogue});

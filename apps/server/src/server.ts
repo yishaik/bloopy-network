@@ -18,13 +18,20 @@ import {
   completeDailyReturn,
   correctMemory,
   deleteMemory,
-  ensureDailyReturn,
   latestPersonalityChange,
   listMemories,
   recordPlayerActivity,
   updateDailyReturnNarrative
 } from "./memory.js";
 import { migrate } from "./migrate.js";
+import {
+  ensureDailyReturnForDate,
+  getNotificationPreferences,
+  localDateForPlayer,
+  markDailyReturnOpened,
+  saveNotificationPreferences,
+  scheduleDueDailyReturnNotifications
+} from "./notifications.js";
 import { buildStory } from "./story.js";
 import { configureManagerWebhook, dispatchOutbox, handleManagedBotUpdate, handleManagerUpdate, managedBotCreationLink, startBotConversation, type TelegramUpdate } from "./telegram.js";
 import type { AvatarGenome, StoryCard } from "./types.js";
@@ -36,7 +43,7 @@ await app.register(cors,{origin:false});
 await app.register(rateLimit,{max:120,timeWindow:"1 minute"});
 await app.register(fastifyStatic,{root,prefix:"/"});
 
-app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.6.0"};});
+app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.7.0"};});
 
 async function authenticatedPlayer(headers:Record<string,string|string[]|undefined>) {
   const initData=typeof headers["x-telegram-init-data"]==="string"?headers["x-telegram-init-data"]:undefined;
@@ -78,17 +85,32 @@ app.get("/api/bootstrap",async(request)=>{
     const dashboard=await getDashboard(client,player.id);
     await recordPlayerActivity(client,player.id,dashboard.creature.id);
     const completed=dashboard.onboarding.status==="complete";
+    const local=await localDateForPlayer(client,player.id);
     const storyArc=completed?await ensureImpossibleDoorArc(client,player.id,dashboard.creature.id):null;
-    const dailyReturn=completed?await ensureDailyReturn(client,player.id,dashboard.creature.id):null;
-    const [inventory,memories,personalityChange,profile]=await Promise.all([
+    const dailyReturn=completed?await ensureDailyReturnForDate(client,player.id,dashboard.creature.id,local.date):null;
+    if(dailyReturn)await markDailyReturnOpened(client,player.id,dashboard.creature.id,dailyReturn.id);
+    const [inventory,memories,personalityChange,profile,notifications]=await Promise.all([
       getInventory(client,dashboard.creature.id),
       listMemories(client,dashboard.creature.id),
       latestPersonalityChange(client,dashboard.creature.id),
-      client.query("SELECT 1 FROM ai_profiles WHERE player_id=$1 AND enabled=true",[player.id])
+      client.query("SELECT 1 FROM ai_profiles WHERE player_id=$1 AND enabled=true",[player.id]),
+      getNotificationPreferences(client,player.id)
     ]);
     const ai=await getAIUsageStatus(client,player.id,Boolean(profile.rowCount));
-    return {...dashboard,storyArc,dailyReturn,inventory,memories,personalityChange,ai};
+    return {...dashboard,storyArc,dailyReturn,inventory,memories,personalityChange,ai,notifications};
   });
+});
+
+app.post("/api/settings/notifications",async(request)=>{
+  const body=z.object({
+    enabled:z.boolean(),
+    timezone:z.string().min(1).max(80),
+    deliveryTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    quietStart:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    quietEnd:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+  }).parse(request.body);
+  const {creature,player}=await authenticatedPlayer(request.headers);
+  return withTransaction((client)=>saveNotificationPreferences(client,player.id,creature.id,body));
 });
 
 app.post("/api/onboarding/wake",async(request)=>{
@@ -178,7 +200,7 @@ app.setErrorHandler((error,_request,reply)=>{
   app.log.error(error);
   const message=error instanceof Error?error.message:"unknown error";
   const conflict=message.includes("already selected")||message.includes("must be completed")||message.includes("must be selected first")||message.includes("already moved on")||message.includes("already complete")||message.includes("already corrected")||message.includes("already deleted")||message.includes("already completed")||message.includes("not enough");
-  const badInput=message.startsWith("name ")||message.startsWith("memory correction")||message.includes("unsupported characters")||message.includes("choice is not available")||message.includes("world memories cannot");
+  const badInput=message.startsWith("name ")||message.startsWith("memory correction")||message.includes("unsupported characters")||message.includes("choice is not available")||message.includes("world memories cannot")||message.includes("timezone")||message.includes("quiet hours")||message.includes("HH:mm")||message.includes("local return date");
   const notFound=message.includes("not found");
   const status=error instanceof z.ZodError||badInput?400:message.includes("auth")||message.includes("signature")?401:notFound?404:conflict?409:500;
   reply.code(status).send({error:status===500?"internal error":message});
@@ -186,6 +208,6 @@ app.setErrorHandler((error,_request,reply)=>{
 
 await migrate();
 await configureManagerWebhook().catch((error)=>app.log.error(error));
-const workerTimer=setInterval(()=>{void withTransaction(async(client)=>{await processDueEvents(client);await dispatchOutbox(client);}).catch((error)=>app.log.error(error));},15_000);
+const workerTimer=setInterval(()=>{void withTransaction(async(client)=>{await scheduleDueDailyReturnNotifications(client);await processDueEvents(client);await dispatchOutbox(client);}).catch((error)=>app.log.error(error));},15_000);
 workerTimer.unref();
 await app.listen({host:"0.0.0.0",port:config.PORT});

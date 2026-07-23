@@ -1,0 +1,15 @@
+{
+  "name": "bloopy-network",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "npm run dev -w @bloopy/server",
+    "build": "npm run build -w @bloopy/server",
+    "start": "npm run start -w @bloopy/server",
+    "typecheck": "npm run typecheck -w @bloopy/server",
+    "test": "npm run test -w @bloopy/server",
+    "migrate": "npm run migrate -w @bloopy/server"
+  },
+  "engines": { "node": ">=22" }
+}

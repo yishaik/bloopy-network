@@ -48,7 +48,7 @@ jobs:
       - name: Validate evaluation secret
         run: test -n "$AI_EVAL_API_KEY" || (echo "Missing repository secret OPENROUTER_EVAL_API_KEY" && exit 1)
       - name: Validate evaluation corpus
-        run: npm test -- narrative-eval-fixtures.test.ts
+        run: npm run test -w @bloopy/server -- narrative-eval-fixtures.test.ts
       - name: Run model comparison
         run: npm run eval:narrative
       - name: Upload evaluation report

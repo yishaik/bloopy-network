@@ -45,7 +45,7 @@ describe("the impossible door",()=>{
       expect(count).toBeGreaterThanOrEqual(2);
       expect(count).toBeLessThanOrEqual(3);
     }
-    expect(buildImpossibleDoorBeat("ending","numa",{doorAction:"open",finalChoice:"protect_friend",epilogue:"tell_truth"}).story.choices).toEqual([]);
+    expect(buildImpossibleDoorBeat("ending","Piko","numa",{doorAction:"open",finalChoice:"protect_friend",epilogue:"tell_truth"}).story.choices).toEqual([]);
   });
 
   it("completes the Numa route with an echo shard",()=>{

@@ -25,6 +25,7 @@ export interface AIUsageStatus {
 
 export function configuredPlatformAvailable():boolean {
   if(!config.PLATFORM_AI_ENABLED||!config.PLATFORM_AI_BASE_URL||!config.PLATFORM_AI_MODEL||!config.PLATFORM_AI_API_KEY)return false;
+  if(!config.PLATFORM_AI_INPUT_USD_PER_MILLION||!config.PLATFORM_AI_OUTPUT_USD_PER_MILLION)return false;
   return config.PLATFORM_AI_ALLOWED_MODELS.length===0||config.PLATFORM_AI_ALLOWED_MODELS.includes(config.PLATFORM_AI_MODEL);
 }
 
@@ -35,8 +36,8 @@ export function shouldSampleRoutineScene(key:string):boolean {
   return bucket<config.AI_PLATFORM_ENRICHMENT_PERCENT;
 }
 
-export function estimateNarrativeCostMicrousd(inputTokens:number,outputTokens:number):number {
-  const usd=(inputTokens*config.PLATFORM_AI_INPUT_USD_PER_MILLION+outputTokens*config.PLATFORM_AI_OUTPUT_USD_PER_MILLION)/1_000_000;
+export function estimateNarrativeCostMicrousd(inputTokens:number,outputTokens:number,inputUsdPerMillion=config.PLATFORM_AI_INPUT_USD_PER_MILLION??0,outputUsdPerMillion=config.PLATFORM_AI_OUTPUT_USD_PER_MILLION??0):number {
+  const usd=(inputTokens*inputUsdPerMillion+outputTokens*outputUsdPerMillion)/1_000_000;
   return Math.max(0,Math.round(usd*1_000_000));
 }
 
@@ -59,7 +60,7 @@ export async function reserveAIRequest(client:pg.PoolClient,playerId:string,prov
   if(provider==="platform"&&options.priority!=="high"&&options.sampleKey&&!shouldSampleRoutineScene(options.sampleKey)) {
     return {allowed:false,provider,reason:"sampled_out",dailyUsed:0,dailyLimit,monthlyEstimatedCostMicrousd,monthlyBudgetMicrousd};
   }
-  if(provider==="platform"&&monthlyBudgetMicrousd>=0&&monthlyEstimatedCostMicrousd>=monthlyBudgetMicrousd) {
+  if(provider==="platform"&&monthlyEstimatedCostMicrousd>=monthlyBudgetMicrousd) {
     return {allowed:false,provider,reason:"monthly_budget",dailyUsed:0,dailyLimit,monthlyEstimatedCostMicrousd,monthlyBudgetMicrousd};
   }
   if(dailyLimit<=0) {

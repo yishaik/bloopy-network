@@ -30,7 +30,7 @@ export interface StoryCard {
   title: string;
   body: string;
   choices: StoryChoice[];
-  reward?: { stars?: number; xp?: number };
+  reward?: { stars?: number; xp?: number } | undefined;
 }
 
 export interface OnboardingState {

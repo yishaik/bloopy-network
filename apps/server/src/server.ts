@@ -13,6 +13,17 @@ import { config } from "./config.js";
 import { db, withTransaction } from "./db.js";
 import { applyImpossibleDoorChoice, ensureImpossibleDoorArc, getInventory, updateDoorStoryNarrative } from "./door-game.js";
 import { assertOnboardingComplete, bootstrapPlayer, completeOnboarding, getDashboard, performAction, saveAIProfile, selectWakeChoice } from "./game.js";
+import {
+  approvedMemoryPacket,
+  completeDailyReturn,
+  correctMemory,
+  deleteMemory,
+  ensureDailyReturn,
+  latestPersonalityChange,
+  listMemories,
+  recordPlayerActivity,
+  updateDailyReturnNarrative
+} from "./memory.js";
 import { migrate } from "./migrate.js";
 import { buildStory } from "./story.js";
 import { configureManagerWebhook, dispatchOutbox, handleManagedBotUpdate, handleManagerUpdate, managedBotCreationLink, startBotConversation, type TelegramUpdate } from "./telegram.js";
@@ -25,7 +36,7 @@ await app.register(cors,{origin:false});
 await app.register(rateLimit,{max:120,timeWindow:"1 minute"});
 await app.register(fastifyStatic,{root,prefix:"/"});
 
-app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.5.0"};});
+app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.6.0"};});
 
 async function authenticatedPlayer(headers:Record<string,string|string[]|undefined>) {
   const initData=typeof headers["x-telegram-init-data"]==="string"?headers["x-telegram-init-data"]:undefined;
@@ -65,11 +76,18 @@ app.get("/api/bootstrap",async(request)=>{
   const {player}=await authenticatedPlayer(request.headers);
   return withTransaction(async(client)=>{
     const dashboard=await getDashboard(client,player.id);
-    const storyArc=dashboard.onboarding.status==="complete"?await ensureImpossibleDoorArc(client,player.id,dashboard.creature.id):null;
-    const inventory=await getInventory(client,dashboard.creature.id);
-    const profile=await client.query("SELECT 1 FROM ai_profiles WHERE player_id=$1 AND enabled=true",[player.id]);
+    await recordPlayerActivity(client,player.id,dashboard.creature.id);
+    const completed=dashboard.onboarding.status==="complete";
+    const storyArc=completed?await ensureImpossibleDoorArc(client,player.id,dashboard.creature.id):null;
+    const dailyReturn=completed?await ensureDailyReturn(client,player.id,dashboard.creature.id):null;
+    const [inventory,memories,personalityChange,profile]=await Promise.all([
+      getInventory(client,dashboard.creature.id),
+      listMemories(client,dashboard.creature.id),
+      latestPersonalityChange(client,dashboard.creature.id),
+      client.query("SELECT 1 FROM ai_profiles WHERE player_id=$1 AND enabled=true",[player.id])
+    ]);
     const ai=await getAIUsageStatus(client,player.id,Boolean(profile.rowCount));
-    return {...dashboard,storyArc,inventory,ai};
+    return {...dashboard,storyArc,dailyReturn,inventory,memories,personalityChange,ai};
   });
 });
 
@@ -98,13 +116,54 @@ app.post("/api/story/impossible-door/choice",async(request)=>{
   return result;
 });
 
+app.post("/api/daily-return/:id/choice",async(request)=>{
+  const params=z.object({id:z.string().uuid()}).parse(request.params);
+  const body=z.object({choice:z.enum(["hold_close","tell_someone","set_down"])}).parse(request.body);
+  const {creature,player}=await authenticatedPlayer(request.headers);
+  await withTransaction((client)=>assertOnboardingComplete(client,creature.id));
+  const result=await withTransaction((client)=>completeDailyReturn(client,player.id,creature.id,params.id,body.choice));
+  if(!result.replayed&&result.storyEntryId) {
+    const memories=await withTransaction((client)=>approvedMemoryPacket(client,creature.id));
+    const narrative=await enrichForPlayer(player.id,creature.id,creature.personality.voice,result.story,{
+      sceneId:`daily_return:${params.id}:${body.choice}`,
+      priority:"high",
+      canonicalFacts:[`The daily-return choice was ${body.choice}.`,...memories.map((summary)=>`Approved memory: ${summary}`)],
+      allowedReferences:[creature.name,"Numa","Dr. Sock","Momo",...memories]
+    });
+    await withTransaction((client)=>updateDailyReturnNarrative(client,params.id,result.storyEntryId as string,narrative.story));
+    result.story=narrative.story;
+    result.dailyReturn.result={...result.dailyReturn.result,story:narrative.story};
+  }
+  return result;
+});
+
+app.post("/api/memories/:id/correct",async(request)=>{
+  const params=z.object({id:z.string().uuid()}).parse(request.params);
+  const body=z.object({summary:z.string().min(3).max(280)}).parse(request.body);
+  const {creature,player}=await authenticatedPlayer(request.headers);
+  return withTransaction((client)=>correctMemory(client,player.id,creature.id,params.id,body.summary));
+});
+
+app.delete("/api/memories/:id",async(request)=>{
+  const params=z.object({id:z.string().uuid()}).parse(request.params);
+  const {creature,player}=await authenticatedPlayer(request.headers);
+  await withTransaction((client)=>deleteMemory(client,player.id,creature.id,params.id));
+  return {ok:true};
+});
+
 app.post("/api/actions",async(request)=>{
   const body=z.object({action:z.enum(["explore","rest","talk","help","social"])}).parse(request.body);
   const {creature,player}=await authenticatedPlayer(request.headers);
   await withTransaction((client)=>assertOnboardingComplete(client,creature.id));
+  const memoryFacts=await withTransaction((client)=>approvedMemoryPacket(client,creature.id));
   const baseStory=buildStory(body.action,creature.name,creature.personality,Date.now());
   const sceneId=`game_action:${body.action}`;
-  const narrative=await enrichForPlayer(player.id,creature.id,creature.personality.voice,baseStory,{sceneId,priority:"routine",canonicalFacts:[`${creature.name} is the player's creature.`,`The action is ${body.action}.`],allowedReferences:[creature.name,"Numa","Dr. Sock","Momo"]});
+  const narrative=await enrichForPlayer(player.id,creature.id,creature.personality.voice,baseStory,{
+    sceneId,
+    priority:"routine",
+    canonicalFacts:[`${creature.name} is the player's creature.`,`The action is ${body.action}.`,...memoryFacts.map((summary)=>`Approved memory: ${summary}`)],
+    allowedReferences:[creature.name,"Numa","Dr. Sock","Momo",...memoryFacts]
+  });
   return withTransaction((client)=>performAction(client,creature.id,body.action,narrative.story));
 });
 
@@ -118,9 +177,10 @@ app.post("/telegram/managed/:botId/:secret",async(request,reply)=>{const params=
 app.setErrorHandler((error,_request,reply)=>{
   app.log.error(error);
   const message=error instanceof Error?error.message:"unknown error";
-  const conflict=message.includes("already selected")||message.includes("must be completed")||message.includes("must be selected first")||message.includes("already moved on")||message.includes("already complete")||message.includes("not enough");
-  const badInput=message.startsWith("name ")||message.includes("unsupported characters")||message.includes("choice is not available");
-  const status=error instanceof z.ZodError||badInput?400:message.includes("auth")||message.includes("signature")?401:conflict?409:500;
+  const conflict=message.includes("already selected")||message.includes("must be completed")||message.includes("must be selected first")||message.includes("already moved on")||message.includes("already complete")||message.includes("already corrected")||message.includes("already deleted")||message.includes("already completed")||message.includes("not enough");
+  const badInput=message.startsWith("name ")||message.startsWith("memory correction")||message.includes("unsupported characters")||message.includes("choice is not available")||message.includes("world memories cannot");
+  const notFound=message.includes("not found");
+  const status=error instanceof z.ZodError||badInput?400:message.includes("auth")||message.includes("signature")?401:notFound?404:conflict?409:500;
   reply.code(status).send({error:status===500?"internal error":message});
 });
 

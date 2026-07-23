@@ -101,6 +101,33 @@ function renderInventory(){
     </article>`).join("");
 }
 
+function renderAIStatus(){
+  const ai=state.ai||{provider:"none",dailyUsed:0,dailyLimit:0,platformAvailable:false};
+  const usageVisible=Number(ai.dailyLimit)>0;
+  $("ai-usage").hidden=!usageVisible;
+  if(usageVisible){
+    const percent=Math.max(0,Math.min(100,Math.round((Number(ai.dailyUsed)/Number(ai.dailyLimit))*100)));
+    $("ai-usage-fill").style.width=`${percent}%`;
+    $("ai-usage-label").textContent=`${Number(ai.dailyUsed)} of ${Number(ai.dailyLimit)} bounded AI moments used today`;
+  }
+
+  if(ai.provider==="byok"){
+    $("ai-mode").textContent="Connected Mind";
+    $("ai-mode-pill").textContent="your provider";
+    $("ai-description").textContent="Your private model connection can enrich selected narration. The game engine still owns every fact, choice and reward.";
+    return;
+  }
+  if(ai.provider==="platform"){
+    $("ai-mode").textContent="Bloopy Mind";
+    $("ai-mode-pill").textContent="included";
+    $("ai-description").textContent="Selected story moments may receive a little extra voice and humor. Authored narration takes over instantly whenever AI is unavailable.";
+    return;
+  }
+  $("ai-mode").textContent="Authored Mind";
+  $("ai-mode-pill").textContent="safe fallback";
+  $("ai-description").textContent="Every scene is currently using deterministic authored narration. Nothing is blocked and no story decision is delegated to AI.";
+}
+
 function renderGame(){
   $("genesis").hidden=true;
   $("game-shell").hidden=false;
@@ -113,6 +140,7 @@ function renderGame(){
   $("xp").textContent=creature.xp;
   renderStoryArc();
   renderInventory();
+  renderAIStatus();
   $("story-feed").innerHTML=(state.stories||[]).map(storyCard).join("");
   $("npc-list").innerHTML=(state.npcs||[]).map((npc)=>`<div class="npc"><img src="/api/creatures/${npc.id}/avatar.svg"><b>${escapeHtml(npc.name)}</b><small>${escapeHtml(npc.current_location.replaceAll("_"," "))}</small></div>`).join("");
 }
@@ -228,6 +256,7 @@ $("ai-form").addEventListener("submit",async(event)=>{
     await api("/api/settings/ai",{method:"POST",body:JSON.stringify(values)});
     event.currentTarget.reset();
     toast("Private model connection saved");
+    await refresh();
   }catch(error){toast(error.message);}
 });
 

@@ -14,6 +14,11 @@ const schema = z.object({
   DEMO_MODE: booleanFromString.default("false"),
   ALLOW_LOCAL_AI: booleanFromString.default("false"),
   CHARACTER_GENESIS_ENABLED: booleanFromString.default("true"),
+  PLATFORM_AI_BASE_URL: z.string().url().optional(),
+  PLATFORM_AI_MODEL: z.string().min(1).max(160).optional(),
+  PLATFORM_AI_API_KEY: z.string().min(1).optional(),
+  AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(15000).default(4500),
+  AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(60).max(400).default(160),
   PROACTIVE_DELAY_SECONDS: z.coerce.number().int().positive().default(7200)
 });
 

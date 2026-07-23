@@ -11,7 +11,8 @@
     "test": "vitest run",
     "migrate": "tsx src/migrate.ts",
     "eval:narrative": "tsx src/eval-narrative.ts",
-    "test:memory-db": "tsx src/memory-db-smoke.ts"
+    "test:memory-db": "tsx src/memory-db-smoke.ts",
+    "test:notifications-db": "tsx src/notifications-db-smoke.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",

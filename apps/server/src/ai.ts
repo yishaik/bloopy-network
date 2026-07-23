@@ -46,7 +46,9 @@ function providerFrom(profile:StoredAIProfile|null):NarrativeProvider|null {
 }
 
 function fallback(story:StoryCard,started:number,reason:string,inputChars=0,provider?:NarrativeProvider):NarrativeResult {
-  return {story,metadata:{provider:provider?.source??"none",model:provider?.model,promptVersion:NARRATIVE_PROMPT_VERSION,usedAI:false,fallbackReason:reason,latencyMs:Date.now()-started,inputChars,outputChars:0}};
+  const metadata:NarrativeMetadata={provider:provider?.source??"none",promptVersion:NARRATIVE_PROMPT_VERSION,usedAI:false,fallbackReason:reason,latencyMs:Date.now()-started,inputChars,outputChars:0};
+  if(provider)metadata.model=provider.model;
+  return {story,metadata};
 }
 
 export async function enrichStory(profile:StoredAIProfile|null,story:StoryCard,voice:string,context:NarrativeContext):Promise<NarrativeResult> {

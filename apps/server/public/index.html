@@ -19,10 +19,7 @@
         <div id="wake-options" class="choice-stack"></div>
       </div>
       <div id="identity-step" class="genesis-step" hidden>
-        <div class="genesis-preview">
-          <img id="genesis-avatar" alt="Your waking creature">
-          <div><h1>It is watching you now</h1><p>Give it a name and one mark it can carry through every future evolution.</p></div>
-        </div>
+        <div class="genesis-preview"><img id="genesis-avatar" alt="Your waking creature"><div><h1>It is watching you now</h1><p>Give it a name and one mark it can carry through every future evolution.</p></div></div>
         <form id="identity-form">
           <label>Creature name<input id="identity-name" name="name" minlength="2" maxlength="24" autocomplete="off" placeholder="Piko" required></label>
           <fieldset><legend>Choose a permanent first mark</legend><div id="marker-options" class="marker-grid"></div></fieldset>
@@ -40,41 +37,48 @@
 
       <section id="daily-return" class="daily-card card" hidden>
         <div class="section-head"><div><p class="eyebrow">TODAY WITH BLOOPY</p><h2 id="daily-title"></h2></div><span id="daily-status" class="pill">one moment</span></div>
-        <p id="daily-body"></p>
-        <div id="daily-choices" class="daily-choices"></div>
+        <p id="daily-body"></p><div id="daily-choices" class="daily-choices"></div>
         <p id="daily-complete" class="daily-complete" hidden>Today's thought has found a place to rest.</p>
       </section>
 
       <section id="personality-change" class="change-card card" hidden>
-        <div class="section-head"><h2>How Bloopy is changing</h2><span id="change-mood" class="pill"></span></div>
-        <p id="change-explanation"></p>
-        <div id="change-deltas" class="trait-deltas"></div>
+        <div class="section-head"><h2>How Bloopy is changing</h2><span id="change-mood" class="pill"></span></div><p id="change-explanation"></p><div id="change-deltas" class="trait-deltas"></div>
       </section>
 
       <section id="story-arc" class="arc-card card" hidden>
         <div class="arc-heading"><div><p class="eyebrow">FIRST ADVENTURE</p><h2>The door that was not there yesterday</h2></div><span id="arc-route" class="pill" hidden></span></div>
-        <div class="arc-progress" aria-label="Story progress"><span id="arc-progress-fill"></span></div>
-        <p id="arc-progress-label" class="arc-progress-label"></p>
+        <div class="arc-progress" aria-label="Story progress"><span id="arc-progress-fill"></span></div><p id="arc-progress-label" class="arc-progress-label"></p>
         <article class="arc-scene"><h3 id="arc-title"></h3><p id="arc-body"></p><div id="arc-choices" class="arc-choices"></div></article>
         <p id="arc-complete" class="arc-complete" hidden>The first impossible thing has been survived. A new message will arrive later.</p>
       </section>
 
-      <section id="free-actions" class="actions card">
-        <button data-action="explore">🧭 Explore</button><button data-action="talk">💬 Talk</button><button data-action="social">🫧 Meet</button><button data-action="rest">🛏 Rest</button>
-      </section>
+      <section id="free-actions" class="actions card"><button data-action="explore">🧭 Explore</button><button data-action="talk">💬 Talk</button><button data-action="social">🫧 Meet</button><button data-action="rest">🛏 Rest</button></section>
 
-      <section id="inventory-card" class="card" hidden>
-        <div class="section-head"><h2>Things worth keeping</h2><span class="pill">inventory</span></div><div id="inventory-list" class="inventory-grid"></div>
-      </section>
+      <section id="inventory-card" class="card" hidden><div class="section-head"><h2>Things worth keeping</h2><span class="pill">inventory</span></div><div id="inventory-list" class="inventory-grid"></div></section>
 
       <section id="memories-card" class="card">
         <div class="section-head"><div><h2>What Bloopy remembers</h2><p class="section-copy">Only active memories can shape future callbacks. Personal memories can be corrected or removed.</p></div><span id="memory-count" class="pill"></span></div>
-        <div id="memory-list" class="memory-list"></div>
-        <p id="memory-empty" class="empty-state" hidden>No lasting memories yet.</p>
+        <div id="memory-list" class="memory-list"></div><p id="memory-empty" class="empty-state" hidden>No lasting memories yet.</p>
       </section>
 
       <section class="card"><div class="section-head"><h2>What happened</h2><button id="share" class="quiet">Share</button></div><div id="story-feed" class="feed"></div></section>
       <section class="card"><div class="section-head"><h2>Already living here</h2><span class="pill">seeded world</span></div><div id="npc-list" class="npc-grid"></div></section>
+
+      <section class="card notification-card">
+        <div class="section-head"><div><p class="eyebrow">DAILY TELEGRAM MOMENT</p><h2>Let Bloopy check in once a day</h2></div><span id="notification-status" class="pill">off</span></div>
+        <p class="section-copy">Notifications are optional. Bloopy sends at most one daily-return message, at your chosen local time, and never during your quiet hours.</p>
+        <form id="notification-form">
+          <label class="toggle-row"><input id="notification-enabled" name="enabled" type="checkbox"><span>Send the daily moment in Telegram</span></label>
+          <div class="time-grid">
+            <label>Daily time<input id="notification-time" name="deliveryTime" type="time" required></label>
+            <label>Quiet hours start<input id="quiet-start" name="quietStart" type="time" required></label>
+            <label>Quiet hours end<input id="quiet-end" name="quietEnd" type="time" required></label>
+          </div>
+          <p class="hint">Timezone: <b id="notification-timezone">UTC</b>. This is detected from your device when you save.</p>
+          <p id="notification-next" class="hint"></p>
+          <button type="submit">Save notification settings</button>
+        </form>
+      </section>
 
       <section id="ai-status-card" class="card mind-card">
         <div class="section-head"><div><p class="eyebrow">BLOOPY MIND</p><h2 id="ai-mode">Authored mind</h2></div><span id="ai-mode-pill" class="pill">safe fallback</span></div>
@@ -88,8 +92,7 @@
           <label>OpenAI-compatible endpoint<input name="baseUrl" placeholder="https://provider.example/v1" required></label>
           <label>Model<input name="model" placeholder="qwen3:4b" required></label>
           <label>API key<input name="apiKey" type="password" placeholder="private-provider-key" required></label>
-          <button type="submit">Save private brain connection</button>
-          <p class="hint">Advanced connections enrich narration but never change game rules, choices or rewards.</p>
+          <button type="submit">Save private brain connection</button><p class="hint">Advanced connections enrich narration but never change game rules, choices or rewards.</p>
         </form></details>
       </section>
     </div>
@@ -104,7 +107,6 @@
     </form>
   </dialog>
 
-  <div id="toast" role="status"></div>
-  <script type="module" src="/app.js"></script>
+  <div id="toast" role="status"></div><script type="module" src="/app.js"></script>
 </body>
 </html>

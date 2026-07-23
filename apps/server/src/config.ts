@@ -13,6 +13,7 @@ const schema = z.object({
   APP_ENCRYPTION_KEY: z.string().default("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
   DEMO_MODE: booleanFromString.default("false"),
   ALLOW_LOCAL_AI: booleanFromString.default("false"),
+  CHARACTER_GENESIS_ENABLED: booleanFromString.default("true"),
   PROACTIVE_DELAY_SECONDS: z.coerce.number().int().positive().default(7200)
 });
 

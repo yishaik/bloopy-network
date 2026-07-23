@@ -4,8 +4,27 @@ on:
   push:
     branches: [main]
 
+env:
+  DATABASE_URL: postgres://bloopy:bloopy@localhost:5432/bloopy
+  APP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  DEMO_MODE: "true"
+  PUBLIC_BASE_URL: http://localhost:3000
+
 jobs:
-  verify:
+  code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  migration:
+    needs: code
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -20,18 +39,10 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      DATABASE_URL: postgres://bloopy:bloopy@localhost:5432/bloopy
-      APP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-      DEMO_MODE: "true"
-      PUBLIC_BASE_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
       - run: npm run migrate

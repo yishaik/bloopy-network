@@ -170,13 +170,15 @@ export async function performAction(client: pg.PoolClient, creatureId: string, a
   const eventId = randomUUID();
   await client.query(`INSERT INTO game_events (id,aggregate_id,event_type,payload) VALUES ($1,$2,'player_action',$3)`,[eventId,creatureId,JSON.stringify({action,story,energyDelta,xp})]);
   await client.query(`INSERT INTO story_entries (creature_id,event_id,title,body,choices,reward) VALUES ($1,$2,$3,$4,$5,$6)`,[creatureId,eventId,story.title,story.body,JSON.stringify(story.choices),JSON.stringify(story.reward??{})]);
-  if (action==="social") await client.query(`INSERT INTO relationships (source_creature_id,target_creature_id,trust,affection,rivalry,last_event) SELECT $1,id,6,8,1,'first_contact' FROM creatures WHERE slug='numa-cloudcartographer' ON CONFLICT (source_creature_id,target_creature_id) DO UPDATE SET trust=relationships.trust+1,affection=relationships.affection+2,last_event='shared_story'`,[creatureId]);
-  return { story, energy:newEnergy, xp:newXp, level:newLevel };
+  if (action==="social") await client.query(`INSERT INTO relationships (source_creature_id,target_creature_id,trust,affection,rivalry,last_event) SELECT $1,id,6,8,1,'first_contact' FROM creatures WHERE slug='numa-cloudcartographer' ON CONFLICT (source_creature_id,target_creature_id) DO UPDATE SET trust=relationships.trust+1,affection=relationships.affection+1,last_event='talked_again',updated_at=now()`,[creatureId]);
+  return {story,creature:{...creature,energy:newEnergy,xp:newXp,level:newLevel,mood:action==="rest"?"cozy":"excited"}};
 }
 
 export async function saveAIProfile(client: pg.PoolClient, playerId: string, input: {baseUrl:string;model:string;apiKey:string}) {
   const url = new URL(input.baseUrl);
   const local = ["localhost","127.0.0.1","::1"].includes(url.hostname);
   if (url.protocol!=="https:" && !(config.ALLOW_LOCAL_AI&&local)) throw new Error("AI endpoint must use HTTPS");
-  await client.query(`INSERT INTO ai_profiles (player_id,base_url,model,encrypted_api_key,enabled) VALUES ($1,$2,$3,$4,true) ON CONFLICT (player_id) DO UPDATE SET base_url=EXCLUDED.base_url,model=EXCLUDED.model,encrypted_api_key=EXCLUDED.encrypted_api_key,enabled=true,updated_at=now()`,[playerId,url.toString().replace(/\/$/,""),input.model,seal(input.apiKey)]);
+  await client.query(`INSERT INTO ai_profiles (player_id,base_url,model,encrypted_api_key,enabled,source,external_user_id,connection_status,connection_metadata,connected_at,last_verified_at,disconnected_at)
+    VALUES ($1,$2,$3,$4,true,'manual',NULL,'active','{}',now(),NULL,NULL)
+    ON CONFLICT (player_id) DO UPDATE SET base_url=EXCLUDED.base_url,model=EXCLUDED.model,encrypted_api_key=EXCLUDED.encrypted_api_key,enabled=true,source='manual',external_user_id=NULL,connection_status='active',connection_metadata='{}',connected_at=now(),last_verified_at=NULL,disconnected_at=NULL,updated_at=now()`,[playerId,url.toString().replace(/\/$/,""),input.model,seal(input.apiKey)]);
 }

@@ -47,7 +47,12 @@ app.post("/api/admin/bots/converse",async(request,reply)=>{const adminKey=reques
 app.post("/telegram/manager",async(request,reply)=>{if(request.headers["x-telegram-bot-api-secret-token"]!==config.TELEGRAM_WEBHOOK_SECRET)return reply.code(401).send({ok:false});await withTransaction((client)=>handleManagerUpdate(client,request.body as TelegramUpdate));return {ok:true};});
 app.post("/telegram/managed/:botId/:secret",async(request,reply)=>{const params=z.object({botId:z.coerce.number().int(),secret:z.string().min(20)}).parse(request.params);const registry=await db.query("SELECT token_cipher,webhook_secret FROM managed_bots WHERE bot_id=$1 AND enabled=true",[params.botId]);if(!registry.rowCount||registry.rows[0].webhook_secret!==params.secret)return reply.code(401).send({ok:false});const {open}=await import("./crypto.js");await withTransaction((client)=>handleManagedBotUpdate(client,params.botId,open(registry.rows[0].token_cipher),request.body as TelegramUpdate));return {ok:true};});
 
-app.setErrorHandler((error,_request,reply)=>{app.log.error(error);const status=error instanceof z.ZodError?400:error.message.includes("auth")||error.message.includes("signature")?401:500;reply.code(status).send({error:status===500?"internal error":error.message});});
+app.setErrorHandler((error,_request,reply)=>{
+  app.log.error(error);
+  const message=error instanceof Error?error.message:"unknown error";
+  const status=error instanceof z.ZodError?400:message.includes("auth")||message.includes("signature")?401:500;
+  reply.code(status).send({error:status===500?"internal error":message});
+});
 
 await migrate();
 await configureManagerWebhook().catch((error)=>app.log.error(error));

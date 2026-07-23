@@ -8,6 +8,7 @@ import {
   type DoorRoute,
   type DoorStoryState
 } from "./impossible-door.js";
+import type { StoryCard } from "./types.js";
 
 const impossibleDoorEnabled=process.env.IMPOSSIBLE_DOOR_ENABLED!=="false";
 const requestedCliffhangerDelay=Number(process.env.DOOR_CLIFFHANGER_DELAY_SECONDS??3600);
@@ -23,7 +24,7 @@ export interface ImpossibleDoorArcView {
   state:DoorStoryState;
   chapter:number;
   totalChapters:number;
-  story:{title:string;body:string;choices:Array<{id:string;label:string;action:string}>;reward?:{xp?:number;stars?:number}};
+  story:StoryCard;
   completedAt:string|null;
 }
 
@@ -90,7 +91,7 @@ export async function getImpossibleDoorArc(client:pg.PoolClient,creatureId:strin
   const beat=buildImpossibleDoorBeat(row.current_beat,row.name,route,state);
   const rendered=await client.query(`SELECT title,body,reward FROM story_entries WHERE arc_instance_id=$1 AND beat_id=$2 ORDER BY created_at DESC LIMIT 1`,[row.id,row.current_beat]);
   const persisted=rendered.rows[0];
-  const story=persisted?{...beat.story,title:persisted.title,body:persisted.body,reward:persisted.reward}:{...beat.story};
+  const story:StoryCard=persisted?{...beat.story,title:persisted.title,body:persisted.body,reward:persisted.reward}:{...beat.story};
   return {
     id:row.id,
     arcId:row.arc_id,
@@ -164,7 +165,7 @@ export async function applyImpossibleDoorChoice(client:pg.PoolClient,playerId:st
   ]);
 
   const nextBeat=buildImpossibleDoorBeat(transition.nextBeat,instance.name,transition.route,transition.state);
-  const persistedStory={...nextBeat.story,reward:{xp:transition.xp}};
+  const persistedStory:StoryCard={...nextBeat.story,reward:{xp:transition.xp}};
   const storyEntry=await client.query(`INSERT INTO story_entries (creature_id,arc_instance_id,beat_id,title,body,choices,reward) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,[
     creatureId,instance.id,nextBeat.id,persistedStory.title,persistedStory.body,JSON.stringify(persistedStory.choices),JSON.stringify(persistedStory.reward)
   ]);

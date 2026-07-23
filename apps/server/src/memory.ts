@@ -3,6 +3,7 @@ import type { Personality, StoryCard } from "./types.js";
 
 export type MemoryTier="working"|"episodic"|"identity"|"world";
 export type DailyReturnChoice="hold_close"|"tell_someone"|"set_down";
+type TraitKey="curiosity"|"courage"|"empathy"|"mischief"|"sociability";
 
 export interface MemoryView {
   id:string;
@@ -36,8 +37,16 @@ export interface DailyReturnView {
 export interface PersonalityEvolution {
   personality:Personality;
   mood:string;
-  deltas:Partial<Record<keyof Pick<Personality,"curiosity"|"courage"|"empathy"|"mischief"|"sociability">,number>>;
+  deltas:Partial<Record<TraitKey,number>>;
   explanation:string;
+}
+
+export interface DailyReturnResult {
+  replayed:boolean;
+  dailyReturn:DailyReturnView;
+  story:StoryCard;
+  personalityChange:PersonalityEvolution;
+  storyEntryId:string|null;
 }
 
 const dailyChoices:DailyReturnView["choices"]=[
@@ -60,6 +69,16 @@ function clamp(value:number,min=0.05,max=0.95):number {
   return Math.round(Math.max(min,Math.min(max,value))*1000)/1000;
 }
 
+function iso(value:unknown):string {
+  return new Date(String(value)).toISOString();
+}
+
+function dateOnly(value:unknown):string {
+  if(value instanceof Date)return value.toISOString().slice(0,10);
+  const text=String(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text)?text:new Date(text).toISOString().slice(0,10);
+}
+
 export function normalizeMemoryCorrection(raw:string):string {
   const value=raw.normalize("NFKC").replace(/\s+/g," ").trim();
   if(value.length<3)throw new Error("memory correction is too short");
@@ -71,16 +90,17 @@ export function normalizeMemoryCorrection(raw:string):string {
 
 export function evolvePersonality(personality:Personality,moodBefore:string,choice:DailyReturnChoice,repetitionCount:number):PersonalityEvolution {
   const factor=1/(1+Math.floor(Math.max(0,repetitionCount)/3));
-  const raw:Record<DailyReturnChoice,PersonalityEvolution["deltas"]>={
+  const raw:Record<DailyReturnChoice,Partial<Record<TraitKey,number>>>={
     hold_close:{empathy:0.009,curiosity:0.003},
     tell_someone:{sociability:0.011,empathy:0.004},
     set_down:{courage:0.008,empathy:0.002}
   };
-  const deltas=Object.fromEntries(Object.entries(raw[choice]).map(([key,value])=>[key,Math.round(Number(value)*factor*1000)/1000])) as PersonalityEvolution["deltas"];
-  const next={...personality};
-  for(const [key,delta] of Object.entries(deltas)) {
-    const trait=key as keyof PersonalityEvolution["deltas"];
-    next[trait]=clamp(Number(next[trait])+Number(delta));
+  const deltas:Partial<Record<TraitKey,number>>={};
+  const next:Personality={...personality};
+  for(const [key,value] of Object.entries(raw[choice]) as Array<[TraitKey,number]>) {
+    const delta=Math.round(value*factor*1000)/1000;
+    deltas[key]=delta;
+    next[key]=clamp(next[key]+delta);
   }
   const mood=choice==="hold_close"?"reflective":choice==="tell_someone"?"connected":"lighter";
   const explanation=choice==="hold_close"
@@ -93,18 +113,34 @@ export function evolvePersonality(personality:Personality,moodBefore:string,choi
 
 function memoryView(row:Record<string,unknown>):MemoryView {
   return {
-    id:String(row.id),tier:row.tier as MemoryTier,summary:String(row.summary),sourceType:String(row.source_type),sourceVersion:String(row.source_version),
-    privacyLevel:row.privacy_level as "private"|"shared",confidence:Number(row.confidence),canonicalStatus:row.canonical_status as "approved"|"user_asserted",
-    worldId:String(row.world_id),importance:Number(row.importance),editable:row.tier!=="world",correctedFromId:row.corrected_from_id?String(row.corrected_from_id):null,
-    createdAt:new Date(String(row.created_at)).toISOString(),updatedAt:new Date(String(row.updated_at)).toISOString()
+    id:String(row.id),
+    tier:row.tier as MemoryTier,
+    summary:String(row.summary),
+    sourceType:String(row.source_type),
+    sourceVersion:String(row.source_version),
+    privacyLevel:row.privacy_level as "private"|"shared",
+    confidence:Number(row.confidence),
+    canonicalStatus:row.canonical_status as "approved"|"user_asserted",
+    worldId:String(row.world_id),
+    importance:Number(row.importance),
+    editable:row.tier!=="world",
+    correctedFromId:row.corrected_from_id?String(row.corrected_from_id):null,
+    createdAt:iso(row.created_at),
+    updatedAt:iso(row.updated_at)
   };
 }
 
 function dailyView(row:Record<string,unknown>):DailyReturnView {
   return {
-    id:String(row.id),status:row.status as "active"|"completed",returnDate:String(row.return_date),memoryId:row.memory_id?String(row.memory_id):null,
-    title:String(row.title),body:String(row.body),choices:(row.status==="active"?(row.choices as DailyReturnView["choices"]):[]),
-    choiceId:row.choice_id as DailyReturnChoice|null,result=(row.result??{}) as Record<string,unknown>
+    id:String(row.id),
+    status:row.status as "active"|"completed",
+    returnDate:dateOnly(row.return_date),
+    memoryId:row.memory_id?String(row.memory_id):null,
+    title:String(row.title),
+    body:String(row.body),
+    choices:row.status==="active"?(row.choices as DailyReturnView["choices"]):[],
+    choiceId:row.choice_id as DailyReturnChoice|null,
+    result:(row.result??{}) as Record<string,unknown>
   };
 }
 
@@ -135,7 +171,7 @@ export async function recordPlayerActivity(client:pg.PoolClient,playerId:string,
   const previous=await client.query(`SELECT MAX(activity_date) AS previous_date FROM player_daily_activity WHERE player_id=$1`,[playerId]);
   const inserted=await client.query(`INSERT INTO player_daily_activity (player_id,activity_date) VALUES ($1,(now() AT TIME ZONE 'UTC')::date) ON CONFLICT DO NOTHING RETURNING activity_date`,[playerId]);
   if(!inserted.rowCount)return;
-  const previousDate=previous.rows[0]?.previous_date?String(previous.rows[0].previous_date):null;
+  const previousDate=previous.rows[0]?.previous_date?dateOnly(previous.rows[0].previous_date):null;
   await client.query(`INSERT INTO analytics_events (player_id,creature_id,event_name,properties) VALUES ($1,$2,'daily_app_open',$3)`,[playerId,creatureId,JSON.stringify({previousDate})]);
   if(previousDate) {
     const gap=await client.query(`SELECT ((now() AT TIME ZONE 'UTC')::date-$1::date)::integer AS days`,[previousDate]);
@@ -155,9 +191,8 @@ export async function approvedMemoryPacket(client:pg.PoolClient,creatureId:strin
   for(const row of result.rows) {
     const summary=String(row.summary).slice(0,280);
     if(total+summary.length>maxCharacters)continue;
-    selected.push(summary);total+=summary.length;
-    await client.query(`UPDATE memories SET last_used_at=now(),updated_at=now() WHERE id=$1`,[row.id]);
-    await client.query(`INSERT INTO memory_audit_events (creature_id,memory_id,event_type,actor_type,details) VALUES ($1,$2,'used','engine',$3)`,[creatureId,row.id,JSON.stringify({surface:"ai_context",worldId})]);
+    selected.push(summary);
+    total+=summary.length;
   }
   return selected;
 }
@@ -204,7 +239,7 @@ export async function deleteMemory(client:pg.PoolClient,playerId:string,creature
 }
 
 export async function ensureDailyReturn(client:pg.PoolClient,playerId:string,creatureId:string,worldId="bloopy-origin"):Promise<DailyReturnView|null> {
-  const creatureResult=await client.query(`SELECT c.name,c.mood,c.created_at,os.status AS onboarding_status FROM creatures c LEFT JOIN onboarding_states os ON os.creature_id=c.id WHERE c.id=$1`,[creatureId]);
+  const creatureResult=await client.query(`SELECT c.name,c.created_at,os.status AS onboarding_status FROM creatures c LEFT JOIN onboarding_states os ON os.creature_id=c.id WHERE c.id=$1`,[creatureId]);
   const creature=creatureResult.rows[0];
   if(!creature||creature.onboarding_status!=="complete")return null;
   const age=await client.query(`SELECT ((now() AT TIME ZONE 'UTC')::date-($1::timestamptz AT TIME ZONE 'UTC')::date)::integer AS days`,[creature.created_at]);
@@ -228,7 +263,7 @@ export async function ensureDailyReturn(client:pg.PoolClient,playerId:string,cre
   return dailyView(row);
 }
 
-export async function completeDailyReturn(client:pg.PoolClient,playerId:string,creatureId:string,instanceId:string,choice:DailyReturnChoice):Promise<{replayed:boolean;dailyReturn:DailyReturnView;story:StoryCard;personalityChange:PersonalityEvolution}> {
+export async function completeDailyReturn(client:pg.PoolClient,playerId:string,creatureId:string,instanceId:string,choice:DailyReturnChoice):Promise<DailyReturnResult> {
   if(!dailyChoices.some((entry)=>entry.id===choice))throw new Error("daily return choice is not available");
   const instanceResult=await client.query(`SELECT dri.*,m.summary AS memory_summary FROM daily_return_instances dri LEFT JOIN memories m ON m.id=dri.memory_id AND m.deleted_at IS NULL WHERE dri.id=$1 AND dri.creature_id=$2 FOR UPDATE OF dri`,[instanceId,creatureId]);
   const instance=instanceResult.rows[0];
@@ -241,8 +276,10 @@ export async function completeDailyReturn(client:pg.PoolClient,playerId:string,c
   if(instance.status==="completed") {
     if(instance.choice_id!==choice)throw new Error("daily return was already completed");
     const saved=existingEvolution.rows[0];
-    const evolution:PersonalityEvolution=saved?{personality:saved.personality_after as Personality,mood:String(saved.mood_after),deltas:saved.trait_deltas,explanation:String(saved.explanation)}:evolvePersonality(creature.personality as Personality,String(creature.mood),choice,0);
-    return {replayed:true,dailyReturn:dailyView(instance),story,personalityChange:evolution};
+    const evolution:PersonalityEvolution=saved
+      ? {personality:saved.personality_after as Personality,mood:String(saved.mood_after),deltas:saved.trait_deltas as Partial<Record<TraitKey,number>>,explanation:String(saved.explanation)}
+      : evolvePersonality(creature.personality as Personality,String(creature.mood),choice,0);
+    return {replayed:true,dailyReturn:dailyView(instance),story,personalityChange:evolution,storyEntryId:null};
   }
   const repetitions=await client.query(`SELECT COUNT(*)::integer AS count FROM personality_events WHERE creature_id=$1 AND source_type=$2`,[creatureId,`daily_return:${choice}`]);
   const evolution=evolvePersonality(creature.personality as Personality,String(creature.mood),choice,Number(repetitions.rows[0]?.count??0));
@@ -258,15 +295,20 @@ export async function completeDailyReturn(client:pg.PoolClient,playerId:string,c
   }
   const result={story,personalityChange:{deltas:evolution.deltas,mood:evolution.mood,explanation:evolution.explanation}};
   const completed=await client.query(`UPDATE daily_return_instances SET status='completed',choice_id=$2,result=$3,completed_at=now(),updated_at=now() WHERE id=$1 RETURNING *`,[instanceId,choice,JSON.stringify(result)]);
-  await client.query(`INSERT INTO story_entries (creature_id,title,body,choices,reward) VALUES ($1,$2,$3,'[]',$4)`,[creatureId,story.title,story.body,JSON.stringify(story.reward??{})]);
+  const storyEntry=await client.query(`INSERT INTO story_entries (creature_id,title,body,choices,reward) VALUES ($1,$2,$3,'[]',$4) RETURNING id`,[creatureId,story.title,story.body,JSON.stringify(story.reward??{})]);
   await client.query(`INSERT INTO analytics_events (player_id,creature_id,event_name,properties) VALUES ($1,$2,'daily_return_choice',$3),($1,$2,'daily_return_completed',$4)`,[
     playerId,creatureId,JSON.stringify({choice,worldId:instance.world_id}),JSON.stringify({choice,worldId:instance.world_id,hasMemory:Boolean(instance.memory_id)})
   ]);
-  return {replayed:false,dailyReturn:dailyView(completed.rows[0]),story,personalityChange:evolution};
+  return {replayed:false,dailyReturn:dailyView(completed.rows[0]),story,personalityChange:evolution,storyEntryId:String(storyEntry.rows[0].id)};
+}
+
+export async function updateDailyReturnNarrative(client:pg.PoolClient,instanceId:string,storyEntryId:string,story:StoryCard):Promise<void> {
+  await client.query(`UPDATE story_entries SET title=$2,body=$3 WHERE id=$1`,[storyEntryId,story.title,story.body]);
+  await client.query(`UPDATE daily_return_instances SET result=jsonb_set(result,'{story}',$2::jsonb,true),updated_at=now() WHERE id=$1`,[instanceId,JSON.stringify(story)]);
 }
 
 export async function latestPersonalityChange(client:pg.PoolClient,creatureId:string) {
   const result=await client.query(`SELECT trait_deltas,mood_after,explanation,created_at FROM personality_events WHERE creature_id=$1 ORDER BY created_at DESC LIMIT 1`,[creatureId]);
   const row=result.rows[0];
-  return row?{deltas:row.trait_deltas,mood:String(row.mood_after),explanation:String(row.explanation),createdAt:new Date(row.created_at).toISOString()}:null;
+  return row?{deltas:row.trait_deltas,mood:String(row.mood_after),explanation:String(row.explanation),createdAt:iso(row.created_at)}:null;
 }

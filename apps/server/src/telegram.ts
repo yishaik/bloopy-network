@@ -38,6 +38,7 @@ async function registerManagedBot(client:pg.PoolClient,update:NonNullable<Telegr
   await client.query(`INSERT INTO managed_bots (bot_id,owner_telegram_user_id,creature_id,username,token_cipher,webhook_secret) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (bot_id) DO UPDATE SET username=EXCLUDED.username,token_cipher=EXCLUDED.token_cipher,webhook_secret=EXCLUDED.webhook_secret,enabled=true,updated_at=now()`,[update.bot.id,update.user.id,creature.id,update.bot.username??null,seal(token),webhookSecret]);
   await botCall(token,"setWebhook",{url:`${config.PUBLIC_BASE_URL}/telegram/managed/${update.bot.id}/${webhookSecret}`,allowed_updates:["message"],drop_pending_updates:true});
   await botCall(token,"setMyCommands",{commands:[{command:"start",description:"Wake up your creature"},{command:"adventure",description:"Start a small adventure"},{command:"meet",description:"Meet another creature"}]});
+  await botCall(token,"setChatMenuButton",{menu_button:{type:"web_app",text:"Open my world",web_app:{url:config.PUBLIC_BASE_URL}}});
   return token;
 }
 
@@ -95,6 +96,8 @@ export async function startBotConversation(client:pg.PoolClient,sourceBotId:numb
 export async function configureManagerWebhook():Promise<void> {
   if (!config.TELEGRAM_MANAGER_BOT_TOKEN || !config.PUBLIC_BASE_URL.startsWith("https://")) return;
   await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"setWebhook",{url:`${config.PUBLIC_BASE_URL}/telegram/manager`,secret_token:config.TELEGRAM_WEBHOOK_SECRET,allowed_updates:["message","managed_bot"],drop_pending_updates:false});
+  await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"setMyCommands",{commands:[{command:"start",description:"Adopt your creature"},{command:"spawn",description:"Give your creature its own bot"}]});
+  await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"setChatMenuButton",{menu_button:{type:"web_app",text:"Open Bloopy",web_app:{url:config.PUBLIC_BASE_URL}}});
 }
 
 export async function dispatchOutbox(client:pg.PoolClient):Promise<number> {

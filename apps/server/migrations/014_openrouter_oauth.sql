@@ -14,6 +14,25 @@ ALTER TABLE ai_profiles
 UPDATE ai_profiles SET connected_at=COALESCE(connected_at,created_at) WHERE enabled=true;
 CREATE INDEX ai_profiles_source_status_idx ON ai_profiles(source,connection_status) WHERE enabled=true;
 
+CREATE OR REPLACE FUNCTION normalize_ai_profile_source() RETURNS trigger AS $$
+BEGIN
+  IF NEW.base_url !~ '^https://openrouter\.ai/api/v1/?$' THEN
+    NEW.source := 'manual';
+    NEW.external_user_id := NULL;
+    NEW.connection_status := 'active';
+    NEW.connection_metadata := '{}';
+    NEW.connected_at := COALESCE(NEW.connected_at,now());
+    NEW.last_verified_at := NULL;
+    NEW.disconnected_at := NULL;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER ai_profiles_normalize_manual_source
+  BEFORE INSERT OR UPDATE OF base_url,encrypted_api_key ON ai_profiles
+  FOR EACH ROW EXECUTE FUNCTION normalize_ai_profile_source();
+
 CREATE TABLE openrouter_oauth_states (
   state_hash text PRIMARY KEY,
   player_id uuid NOT NULL REFERENCES players(id) ON DELETE CASCADE,

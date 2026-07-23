@@ -5,7 +5,7 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { z } from "zod";
-import { enrichStory } from "./ai.js";
+import { enrichStory, type NarrativeMetadata } from "./ai.js";
 import { resolveRequestUser } from "./auth.js";
 import { renderAvatar } from "./avatar.js";
 import { config } from "./config.js";
@@ -23,12 +23,17 @@ await app.register(cors,{origin:false});
 await app.register(rateLimit,{max:120,timeWindow:"1 minute"});
 await app.register(fastifyStatic,{root,prefix:"/"});
 
-app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.2.0"};});
+app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.3.0"};});
 
 async function authenticatedPlayer(headers:Record<string,string|string[]|undefined>) {
   const initData=typeof headers["x-telegram-init-data"]==="string"?headers["x-telegram-init-data"]:undefined;
   const user=resolveRequestUser(initData);
   return withTransaction((client)=>bootstrapPlayer(client,user));
+}
+
+async function logNarrative(playerId:string,creatureId:string,sceneId:string,metadata:NarrativeMetadata) {
+  await db.query(`INSERT INTO ai_generation_logs (player_id,creature_id,scene_id,provider,model,prompt_version,used_ai,fallback_reason,latency_ms,input_chars,output_chars) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[playerId,creatureId,sceneId,metadata.provider,metadata.model??null,metadata.promptVersion,metadata.usedAI,metadata.fallbackReason??null,metadata.latencyMs,metadata.inputChars,metadata.outputChars]);
+  await db.query(`INSERT INTO analytics_events (player_id,creature_id,event_name,properties) VALUES ($1,$2,$3,$4)`,[playerId,creatureId,metadata.usedAI?"ai_enrichment_used":"ai_fallback_used",JSON.stringify({sceneId,provider:metadata.provider,model:metadata.model,promptVersion:metadata.promptVersion,reason:metadata.fallbackReason,latencyMs:metadata.latencyMs})]);
 }
 
 app.get("/api/bootstrap",async(request)=>{const {player}=await authenticatedPlayer(request.headers);return withTransaction((client)=>getDashboard(client,player.id));});
@@ -51,8 +56,10 @@ app.post("/api/actions",async(request)=>{
   await withTransaction((client)=>assertOnboardingComplete(client,creature.id));
   const profileResult=await db.query("SELECT base_url,model,encrypted_api_key FROM ai_profiles WHERE player_id=$1 AND enabled=true",[player.id]);
   const baseStory=buildStory(body.action,creature.name,creature.personality,Date.now());
-  const story=await enrichStory(profileResult.rows[0]??null,baseStory,creature.personality.voice);
-  return withTransaction((client)=>performAction(client,creature.id,body.action,story));
+  const sceneId=`game_action:${body.action}`;
+  const narrative=await enrichStory(profileResult.rows[0]??null,baseStory,creature.personality.voice,{sceneId,canonicalFacts:[`${creature.name} is the player's creature.`,`The action is ${body.action}.`],allowedReferences:[creature.name,"Numa","Dr. Sock","Momo"]});
+  await logNarrative(player.id,creature.id,sceneId,narrative.metadata).catch((error)=>app.log.warn({error,sceneId},"AI telemetry failed"));
+  return withTransaction((client)=>performAction(client,creature.id,body.action,narrative.story));
 });
 
 app.get("/api/creatures/:id/avatar.svg",async(request,reply)=>{const params=z.object({id:z.string().uuid()}).parse(request.params);const result=await db.query("SELECT name,genome FROM creatures WHERE id=$1",[params.id]);if(!result.rowCount)return reply.code(404).send({error:"not found"});reply.header("content-type","image/svg+xml").header("cache-control","public, max-age=300");return renderAvatar(result.rows[0].genome as AvatarGenome,result.rows[0].name);});

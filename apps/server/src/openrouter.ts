@@ -155,10 +155,10 @@ export async function failOpenRouterConnection(client:pg.PoolClient,stateHash:st
 }
 
 export async function getOpenRouterConnection(client:pg.PoolClient,playerId:string):Promise<OpenRouterConnectionView> {
-  const result=await client.query(`SELECT source,model,external_user_id,connection_status,connection_metadata,connected_at,last_verified_at FROM ai_profiles WHERE player_id=$1 AND enabled=true`,[playerId]);
+  const result=await client.query(`SELECT source,model,external_user_id,connection_status,connection_metadata,connected_at,last_verified_at FROM ai_profiles WHERE player_id=$1`,[playerId]);
   const row=result.rows[0];
   if(!row)return {source:"none",connected:false,status:"none",mode:null,model:null,externalUserId:null,connectedAt:null,lastVerifiedAt:null,keyInfo:null,models:OPENROUTER_MODELS};
-  if(row.source!=="openrouter")return {source:"manual",connected:true,status:row.connection_status==="invalid"?"invalid":"active",mode:null,model:String(row.model),externalUserId:null,connectedAt:iso(row.connected_at),lastVerifiedAt:iso(row.last_verified_at),keyInfo:null,models:OPENROUTER_MODELS};
+  if(row.source!=="openrouter")return {source:"manual",connected:row.connection_status==="active",status:row.connection_status==="invalid"?"invalid":"active",mode:null,model:String(row.model),externalUserId:null,connectedAt:iso(row.connected_at),lastVerifiedAt:iso(row.last_verified_at),keyInfo:null,models:OPENROUTER_MODELS};
   const metadata=(row.connection_metadata??{}) as {mode?:OpenRouterMode;keyInfo?:OpenRouterKeyInfo};
   return {
     source:"openrouter",connected:row.connection_status==="active",status:row.connection_status==="invalid"?"invalid":"active",
@@ -177,19 +177,19 @@ export async function selectOpenRouterMode(client:pg.PoolClient,playerId:string,
 }
 
 export async function verifyOpenRouterConnection(client:pg.PoolClient,playerId:string):Promise<{key:string;connection:OpenRouterConnectionView}> {
-  const result=await client.query(`SELECT encrypted_api_key FROM ai_profiles WHERE player_id=$1 AND source='openrouter' AND enabled=true`,[playerId]);
+  const result=await client.query(`SELECT encrypted_api_key FROM ai_profiles WHERE player_id=$1 AND source='openrouter'`,[playerId]);
   if(!result.rowCount)throw new Error("OpenRouter is not connected");
   return {key:open(String(result.rows[0].encrypted_api_key)),connection:await getOpenRouterConnection(client,playerId)};
 }
 
 export async function recordOpenRouterVerification(client:pg.PoolClient,playerId:string,keyInfo:OpenRouterKeyInfo):Promise<OpenRouterConnectionView> {
-  const updated=await client.query(`UPDATE ai_profiles SET connection_status='active',connection_metadata=jsonb_set(connection_metadata,'{keyInfo}',$2::jsonb,true),last_verified_at=now(),updated_at=now() WHERE player_id=$1 AND source='openrouter' AND enabled=true RETURNING player_id`,[playerId,JSON.stringify(keyInfo)]);
+  const updated=await client.query(`UPDATE ai_profiles SET enabled=true,connection_status='active',connection_metadata=jsonb_set(connection_metadata,'{keyInfo}',$2::jsonb,true),last_verified_at=now(),updated_at=now() WHERE player_id=$1 AND source='openrouter' RETURNING player_id`,[playerId,JSON.stringify(keyInfo)]);
   if(!updated.rowCount)throw new Error("OpenRouter is not connected");
   return getOpenRouterConnection(client,playerId);
 }
 
 export async function markOpenRouterInvalid(client:pg.PoolClient,playerId:string):Promise<void> {
-  await client.query(`UPDATE ai_profiles SET connection_status='invalid',enabled=false,updated_at=now() WHERE player_id=$1 AND source='openrouter'`,[playerId]);
+  await client.query(`UPDATE ai_profiles SET connection_status='invalid',updated_at=now() WHERE player_id=$1 AND source='openrouter'`,[playerId]);
 }
 
 export async function disconnectOpenRouter(client:pg.PoolClient,playerId:string):Promise<boolean> {

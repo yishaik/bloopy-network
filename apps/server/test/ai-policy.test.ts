@@ -3,8 +3,8 @@ import { configuredPlatformAvailable, estimateNarrativeCostMicrousd, shouldSampl
 
 describe("AI policy",()=>{
   it("estimates platform cost in integer microdollars",()=>{
-    expect(estimateNarrativeCostMicrousd(1000,100)).toBe(190);
-    expect(estimateNarrativeCostMicrousd(0,0)).toBe(0);
+    expect(estimateNarrativeCostMicrousd(1000,100,0.11,0.8)).toBe(190);
+    expect(estimateNarrativeCostMicrousd(0,0,0.11,0.8)).toBe(0);
   });
 
   it("samples routine scenes deterministically",()=>{
@@ -12,7 +12,7 @@ describe("AI policy",()=>{
     expect(shouldSampleRoutineScene(key)).toBe(shouldSampleRoutineScene(key));
   });
 
-  it("does not claim a platform provider without complete credentials",()=>{
+  it("does not claim a platform provider without complete credentials and pricing",()=>{
     expect(configuredPlatformAvailable()).toBe(false);
   });
 });

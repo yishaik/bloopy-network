@@ -42,7 +42,7 @@ async function main() {
     assert(scheduled.rowCount===1,"outbox did not contain exactly one daily notification");
     assert(scheduled.rows[0].source_key&&scheduled.rows[0].notification_scheduled_at,"scheduled notification metadata is missing");
 
-    globalThis.fetch=(async()=>({json:async()=>({ok:true,result:{message_id:1}})})) as typeof fetch;
+    globalThis.fetch=async()=>new Response(JSON.stringify({ok:true,result:{message_id:1}}),{status:200,headers:{"content-type":"application/json"}});
     const firstDispatch=await dispatchOutbox(client);
     const secondDispatch=await dispatchOutbox(client);
     assert(firstDispatch===1,"daily notification was not dispatched");

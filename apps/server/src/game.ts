@@ -24,7 +24,7 @@ export async function bootstrapPlayer(client: pg.PoolClient, user: TelegramUser)
     creatureResult = await client.query(`INSERT INTO creatures (player_id,slug,name,kind,personality,genome,energy,mood,current_location) VALUES ($1,$2,$3,'player',$4,$5,82,'curious','cardboard_nest') RETURNING *`, [player.id,`bloopy-${user.id}`,`${user.first_name}'s Bloopy`,personality,genome]);
     const creature = creatureResult.rows[0];
     const opening = buildStory("talk", creature.name, personality, user.id);
-    await client.query(`INSERT INTO story_entries (creature_id,title,body,choices,reward) VALUES ($1,$2,$3,$4,$5)`, [creature.id,"A small creature wakes up",`A soft pop comes from the cardboard nest. ${opening.body}`,opening.choices,opening.reward??{}]);
+    await client.query(`INSERT INTO story_entries (creature_id,title,body,choices,reward) VALUES ($1,$2,$3,$4,$5)`, [creature.id,"A small creature wakes up",`A soft pop comes from the cardboard nest. ${opening.body}`,JSON.stringify(opening.choices),JSON.stringify(opening.reward??{})]);
     await client.query(`INSERT INTO world_events (creature_id,event_type,payload,due_at) VALUES ($1,'proactive_story',$2,now()+($3||' seconds')::interval)`, [creature.id,{action:"social"},config.PROACTIVE_DELAY_SECONDS]);
     await client.query(`INSERT INTO quest_instances (quest_id,creature_id,status,progress) VALUES ('first-window',$1,'active','{"seen":false}'),('meet-numa',$1,'active','{"met":false}')`, [creature.id]);
   }
@@ -57,7 +57,7 @@ export async function performAction(client: pg.PoolClient, creatureId: string, a
   await client.query(`UPDATE creatures SET energy=$2,xp=$3,level=$4,mood=$5,updated_at=now() WHERE id=$1`,[creatureId,newEnergy,newXp,newLevel,action==="rest"?"cozy":"excited"]);
   const eventId = randomUUID();
   await client.query(`INSERT INTO game_events (id,aggregate_id,event_type,payload) VALUES ($1,$2,'player_action',$3)`,[eventId,creatureId,{action,story,energyDelta,xp}]);
-  await client.query(`INSERT INTO story_entries (creature_id,event_id,title,body,choices,reward) VALUES ($1,$2,$3,$4,$5,$6)`,[creatureId,eventId,story.title,story.body,story.choices,story.reward??{}]);
+  await client.query(`INSERT INTO story_entries (creature_id,event_id,title,body,choices,reward) VALUES ($1,$2,$3,$4,$5,$6)`,[creatureId,eventId,story.title,story.body,JSON.stringify(story.choices),JSON.stringify(story.reward??{})]);
   if (action==="social") await client.query(`INSERT INTO relationships (source_creature_id,target_creature_id,trust,affection,rivalry,last_event) SELECT $1,id,6,8,1,'first_contact' FROM creatures WHERE slug='numa-cloudcartographer' ON CONFLICT (source_creature_id,target_creature_id) DO UPDATE SET trust=relationships.trust+1,affection=relationships.affection+2,last_event='shared_story'`,[creatureId]);
   return { story, energy:newEnergy, xp:newXp, level:newLevel };
 }

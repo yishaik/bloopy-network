@@ -7,7 +7,7 @@ export async function processDueEvents(client: pg.PoolClient): Promise<number> {
     await client.query("UPDATE world_events SET status='processing',updated_at=now() WHERE id=$1",[event.id]);
     const action = event.payload?.action??"social";
     const story = buildStory(action,event.name,event.personality,Number(new Date(event.due_at)));
-    await client.query(`INSERT INTO story_entries (creature_id,event_id,title,body,choices,reward) VALUES ($1,$2,$3,$4,$5,$6)`,[event.creature_id,event.id,story.title,story.body,story.choices,story.reward??{}]);
+    await client.query(`INSERT INTO story_entries (creature_id,event_id,title,body,choices,reward) VALUES ($1,$2,$3,$4,$5,$6)`,[event.creature_id,event.id,story.title,story.body,JSON.stringify(story.choices),JSON.stringify(story.reward??{})]);
     if (event.telegram_user_id) await client.query(`INSERT INTO outbox (chat_id,payload) VALUES ($1,$2)`,[String(event.telegram_user_id),{method:"sendMessage",text:`${story.title}\n\n${story.body}`}]);
     await client.query("UPDATE world_events SET status='completed',updated_at=now() WHERE id=$1",[event.id]);
     await client.query(`INSERT INTO world_events (creature_id,event_type,payload,due_at) VALUES ($1,'proactive_story',$2,now()+interval '8 hours')`,[event.creature_id,{action:action==="social"?"explore":"social"}]);

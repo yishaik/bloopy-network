@@ -131,12 +131,17 @@ export async function dispatchOutbox(client:pg.PoolClient):Promise<number> {
   const result=await client.query(`SELECT * FROM outbox WHERE status='pending' AND available_at<=now() ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 50`);
   for (const row of result.rows) {
     try {
-      const payload=row.payload as {method?:string;text?:string};
-      await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,payload.method??"sendMessage",{chat_id:row.chat_id,text:payload.text??"Your creature has something to tell you."});
-      await client.query("UPDATE outbox SET status='sent',attempts=attempts+1 WHERE id=$1",[row.id]);
+      const payload=row.payload as Record<string,unknown>&{method?:string};
+      const {method,...body}=payload;
+      await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,method??"sendMessage",{chat_id:row.chat_id,...body});
+      await client.query("UPDATE outbox SET status='sent',attempts=attempts+1,sent_at=now(),last_error=NULL WHERE id=$1",[row.id]);
+      if(row.daily_return_id) {
+        await client.query(`UPDATE daily_return_instances SET notification_sent_at=COALESCE(notification_sent_at,now()),updated_at=now() WHERE id=$1`,[row.daily_return_id]);
+        if(row.player_id&&row.creature_id)await client.query(`INSERT INTO analytics_events (player_id,creature_id,event_name,properties) VALUES ($1,$2,'daily_return_notification_delivered',$3)`,[row.player_id,row.creature_id,JSON.stringify({dailyReturnId:row.daily_return_id})]);
+      }
     } catch (error) {
-      const reason=error instanceof Error?error.message.slice(0,500):"unknown error";
-      await client.query(`UPDATE outbox SET attempts=attempts+1,last_error=$2,status=CASE WHEN attempts+1>=7 THEN 'dead' ELSE 'pending' END,available_at=now()+(interval '1 second'*(60*POWER(2,LEAST(attempts,5))+floor(random()*30))) WHERE id=$1`,[row.id,reason]);
+      const message=(error instanceof Error?error.message:"Telegram delivery failed").slice(0,500);
+      await client.query(`UPDATE outbox SET attempts=attempts+1,status=CASE WHEN attempts+1>=7 THEN 'failed' ELSE 'pending' END,available_at=now()+(interval '1 second'*(60*POWER(2,LEAST(attempts,5))+floor(random()*30))),last_error=$2 WHERE id=$1`,[row.id,message]);
       console.error({error,outboxId:row.id},"outbox delivery failed");
     }
   }

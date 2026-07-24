@@ -10,6 +10,7 @@ env:
   APP_ENCRYPTION_KEY: NPqzBcDWPKtbd03eoulJ6pE0kPNeLcOAkPNgU2KcmtE=
   DEMO_MODE: "true"
   PUBLIC_BASE_URL: http://localhost:3000
+  TELEGRAM_MANAGER_BOT_TOKEN: ci-fake-manager-token
 
 jobs:
   code:
@@ -69,3 +70,23 @@ jobs:
           node-version: 22
       - run: npm install --silent
       - run: npm run migrate
+      - id: memory_smoke
+        continue-on-error: true
+        run: npm run test:memory-db -w @bloopy/server > memory-db-smoke.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: steps.memory_smoke.outcome == 'failure'
+        with:
+          name: memory-db-smoke-log
+          path: memory-db-smoke.log
+      - if: steps.memory_smoke.outcome == 'failure'
+        run: cat memory-db-smoke.log && exit 1
+      - id: notification_smoke
+        continue-on-error: true
+        run: npm run test:notifications-db -w @bloopy/server > notifications-db-smoke.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: steps.notification_smoke.outcome == 'failure'
+        with:
+          name: notifications-db-smoke-log
+          path: notifications-db-smoke.log
+      - if: steps.notification_smoke.outcome == 'failure'
+        run: cat notifications-db-smoke.log && exit 1

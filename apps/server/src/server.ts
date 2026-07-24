@@ -6,7 +6,8 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { z } from "zod";
-import { enrichStory, type NarrativeMetadata } from "./ai.js";
+import { enrichStory, providerKind, type NarrativeContext, type NarrativeMetadata, type StoredAIProfile } from "./ai.js";
+import { getAIUsageStatus, reserveAIRequest } from "./ai-policy.js";
 import { parseUnsafeStartParam, resolveRequestUser } from "./auth.js";
 import { renderAvatar } from "./avatar.js";
 import { config } from "./config.js";
@@ -15,10 +16,28 @@ import { db, withTransaction } from "./db.js";
 import { applyImpossibleDoorChoice, ensureImpossibleDoorArc, getInventory, updateDoorStoryNarrative } from "./door-game.js";
 import { AppError } from "./errors.js";
 import { assertOnboardingComplete, bootstrapPlayer, buyShopItem, completeOnboarding, getDashboard, performAction, pickSocialTarget, recordEncounter, saveAIProfile, selectWakeChoice } from "./game.js";
+import {
+  approvedMemoryPacket,
+  completeDailyReturn,
+  correctMemory,
+  deleteMemory,
+  latestPersonalityChange,
+  listMemories,
+  recordPlayerActivity,
+  updateDailyReturnNarrative
+} from "./memory.js";
 import { migrate } from "./migrate.js";
+import {
+  ensureDailyReturnForDate,
+  getNotificationPreferences,
+  localDateForPlayer,
+  markDailyReturnOpened,
+  saveNotificationPreferences,
+  scheduleDueDailyReturnNotifications
+} from "./notifications.js";
 import { buildStory } from "./story.js";
 import { configureManagerWebhook, dispatchOutbox, handleManagedBotUpdate, handleManagerUpdate, managedBotCreationLink, migrateManagedWebhooks, startBotConversation, type TelegramUpdate } from "./telegram.js";
-import type { AvatarGenome } from "./types.js";
+import type { AvatarGenome, StoryCard } from "./types.js";
 import { cleanupProcessedWork, processDueEvents } from "./worker.js";
 
 const app=Fastify({logger:{level:config.NODE_ENV==="production"?"info":"debug"},trustProxy:true,bodyLimit:262_144});
@@ -45,7 +64,7 @@ function secureEquals(candidate:unknown,expected:string):boolean {
   return left.length===right.length&&timingSafeEqual(left,right);
 }
 
-app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.5.0"};});
+app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.8.0"};});
 
 function initDataFrom(headers:Record<string,string|string[]|undefined>):string|undefined {
   return typeof headers["x-telegram-init-data"]==="string"?headers["x-telegram-init-data"]:undefined;
@@ -56,11 +75,34 @@ async function authenticatedPlayer(headers:Record<string,string|string[]|undefin
   return withTransaction((client)=>bootstrapPlayer(client,user));
 }
 
+async function loadAIProfile(playerId:string):Promise<StoredAIProfile|null> {
+  const result=await db.query("SELECT base_url,model,encrypted_api_key FROM ai_profiles WHERE player_id=$1 AND enabled=true",[playerId]);
+  return result.rows[0]??null;
+}
+
 async function logNarrative(playerId:string,creatureId:string,sceneId:string,metadata:NarrativeMetadata) {
   await withTransaction(async(client)=>{
-    await client.query(`INSERT INTO ai_generation_logs (player_id,creature_id,scene_id,provider,model,prompt_version,used_ai,fallback_reason,latency_ms,input_chars,output_chars) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[playerId,creatureId,sceneId,metadata.provider,metadata.model??null,metadata.promptVersion,metadata.usedAI,metadata.fallbackReason??null,metadata.latencyMs,metadata.inputChars,metadata.outputChars]);
-    await client.query(`INSERT INTO analytics_events (player_id,creature_id,event_name,properties) VALUES ($1,$2,$3,$4)`,[playerId,creatureId,metadata.usedAI?"ai_enrichment_used":"ai_fallback_used",JSON.stringify({sceneId,provider:metadata.provider,model:metadata.model,promptVersion:metadata.promptVersion,reason:metadata.fallbackReason,latencyMs:metadata.latencyMs})]);
+    await client.query(`INSERT INTO ai_generation_logs (player_id,creature_id,scene_id,provider,model,prompt_version,used_ai,fallback_reason,latency_ms,input_chars,output_chars,prompt_tokens,completion_tokens,estimated_cost_microusd)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,[
+      playerId,creatureId,sceneId,metadata.provider,metadata.model??null,metadata.promptVersion,metadata.usedAI,metadata.fallbackReason??null,
+      metadata.latencyMs,metadata.inputChars,metadata.outputChars,metadata.promptTokens??null,metadata.completionTokens??null,metadata.estimatedCostMicrousd
+    ]);
+    await client.query(`INSERT INTO analytics_events (player_id,creature_id,event_name,properties) VALUES ($1,$2,$3,$4)`,[playerId,creatureId,metadata.usedAI?"ai_enrichment_used":"ai_fallback_used",JSON.stringify({sceneId,provider:metadata.provider,model:metadata.model,promptVersion:metadata.promptVersion,reason:metadata.fallbackReason,latencyMs:metadata.latencyMs,promptTokens:metadata.promptTokens,completionTokens:metadata.completionTokens,estimatedCostMicrousd:metadata.estimatedCostMicrousd})]);
   });
+}
+
+async function enrichForPlayer(playerId:string,creatureId:string,voice:string,story:StoryCard,context:NarrativeContext) {
+  const profile=await loadAIProfile(playerId);
+  const kind=providerKind(profile);
+  let skipReason:string|undefined;
+  if(kind!=="none") {
+    const date=new Date().toISOString().slice(0,10);
+    const decision=await withTransaction((client)=>reserveAIRequest(client,playerId,kind,{priority:context.priority??"routine",sampleKey:`${playerId}:${context.sceneId}:${date}`}));
+    if(!decision.allowed)skipReason=`policy_${decision.reason??"denied"}`;
+  }
+  const narrative=await enrichStory(profile,story,voice,context,skipReason?{skipReason}:{});
+  await logNarrative(playerId,creatureId,context.sceneId,narrative.metadata).catch((error)=>app.log.warn({error,sceneId:context.sceneId},"AI telemetry failed"));
+  return narrative;
 }
 
 app.get("/api/bootstrap",async(request)=>{
@@ -68,16 +110,41 @@ app.get("/api/bootstrap",async(request)=>{
   const user=await resolveRequestUser(initData);
   const {player}=await withTransaction((client)=>bootstrapPlayer(client,user));
   return withTransaction(async(client)=>{
-    const dashboard=await getDashboard(client,player.id);
+    let dashboard=await getDashboard(client,player.id);
+    await recordPlayerActivity(client,player.id,dashboard.creature.id);
+    const completed=dashboard.onboarding.status==="complete";
+    let encounter=null;
     const startParam=initData?parseUnsafeStartParam(initData):null;
-    if(startParam?.startsWith("meet_")&&dashboard.onboarding.status==="complete") {
-      const met=await recordEncounter(client,player.id,{id:dashboard.creature.id,name:dashboard.creature.name,slug:dashboard.creature.slug},startParam.slice(5).toLowerCase());
-      if(met) return {...(await getDashboard(client,player.id)),storyArc:await ensureImpossibleDoorArc(client,player.id,dashboard.creature.id),inventory:await getInventory(client,dashboard.creature.id),managerBotUsername:config.TELEGRAM_MANAGER_BOT_USERNAME??null,encounter:met};
+    if(startParam?.startsWith("meet_")&&completed) {
+      encounter=await recordEncounter(client,player.id,{id:dashboard.creature.id,name:dashboard.creature.name,slug:dashboard.creature.slug},startParam.slice(5).toLowerCase());
+      if(encounter) dashboard=await getDashboard(client,player.id);
     }
-    const storyArc=dashboard.onboarding.status==="complete"?await ensureImpossibleDoorArc(client,player.id,dashboard.creature.id):null;
-    const inventory=await getInventory(client,dashboard.creature.id);
-    return {...dashboard,storyArc,inventory,managerBotUsername:config.TELEGRAM_MANAGER_BOT_USERNAME??null,encounter:null};
+    const local=await localDateForPlayer(client,player.id);
+    const storyArc=completed?await ensureImpossibleDoorArc(client,player.id,dashboard.creature.id):null;
+    const dailyReturn=completed?await ensureDailyReturnForDate(client,player.id,dashboard.creature.id,local.date):null;
+    if(dailyReturn)await markDailyReturnOpened(client,player.id,dashboard.creature.id,dailyReturn.id);
+    const [inventory,memories,personalityChange,profile,notifications]=await Promise.all([
+      getInventory(client,dashboard.creature.id),
+      listMemories(client,dashboard.creature.id),
+      latestPersonalityChange(client,dashboard.creature.id),
+      client.query("SELECT 1 FROM ai_profiles WHERE player_id=$1 AND enabled=true",[player.id]),
+      getNotificationPreferences(client,player.id)
+    ]);
+    const ai=await getAIUsageStatus(client,player.id,Boolean(profile.rowCount));
+    return {...dashboard,storyArc,dailyReturn,inventory,memories,personalityChange,ai,notifications,managerBotUsername:config.TELEGRAM_MANAGER_BOT_USERNAME??null,encounter};
   });
+});
+
+app.post("/api/settings/notifications",async(request)=>{
+  const body=z.object({
+    enabled:z.boolean(),
+    timezone:z.string().min(1).max(80),
+    deliveryTime:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    quietStart:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    quietEnd:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+  }).parse(request.body);
+  const {creature,player}=await authenticatedPlayer(request.headers);
+  return withTransaction((client)=>saveNotificationPreferences(client,player.id,creature.id,body));
 });
 
 app.post("/api/onboarding/wake",async(request)=>{
@@ -100,9 +167,7 @@ app.post("/api/story/impossible-door/choice",{config:{rateLimit:{max:30,timeWind
   if(!result.replayed&&result.storyEntryId&&result.narrative) {
     // Canonical text is already committed; AI polish is best-effort and must never fail the request (issue #25).
     try {
-      const profileResult=await db.query("SELECT base_url,model,encrypted_api_key FROM ai_profiles WHERE player_id=$1 AND enabled=true",[player.id]);
-      const narrative=await enrichStory(profileResult.rows[0]??null,result.storyArc.story,creature.personality.voice,result.narrative);
-      await logNarrative(player.id,creature.id,result.narrative.sceneId,narrative.metadata).catch((error)=>app.log.warn({error,sceneId:result.narrative?.sceneId},"AI telemetry failed"));
+      const narrative=await enrichForPlayer(player.id,creature.id,creature.personality.voice,result.storyArc.story,{...result.narrative,priority:"high"});
       if(narrative.metadata.usedAI) {
         await withTransaction((client)=>updateDoorStoryNarrative(client,result.storyEntryId as string,narrative.story.title,narrative.story.body));
         result.storyArc.story=narrative.story;
@@ -114,16 +179,55 @@ app.post("/api/story/impossible-door/choice",{config:{rateLimit:{max:30,timeWind
   return result;
 });
 
+app.post("/api/daily-return/:id/choice",async(request)=>{
+  const params=z.object({id:z.string().uuid()}).parse(request.params);
+  const body=z.object({choice:z.enum(["hold_close","tell_someone","set_down"])}).parse(request.body);
+  const {creature,player}=await authenticatedPlayer(request.headers);
+  await withTransaction((client)=>assertOnboardingComplete(client,creature.id));
+  const result=await withTransaction((client)=>completeDailyReturn(client,player.id,creature.id,params.id,body.choice));
+  if(!result.replayed&&result.storyEntryId) {
+    const memories=await withTransaction((client)=>approvedMemoryPacket(client,creature.id));
+    const narrative=await enrichForPlayer(player.id,creature.id,creature.personality.voice,result.story,{
+      sceneId:`daily_return:${params.id}:${body.choice}`,
+      priority:"high",
+      canonicalFacts:[`The daily-return choice was ${body.choice}.`,...memories.map((summary)=>`Approved memory: ${summary}`)],
+      allowedReferences:[creature.name,"Numa","Dr. Sock","Momo",...memories]
+    });
+    await withTransaction((client)=>updateDailyReturnNarrative(client,params.id,result.storyEntryId as string,narrative.story));
+    result.story=narrative.story;
+    result.dailyReturn.result={...result.dailyReturn.result,story:narrative.story};
+  }
+  return result;
+});
+
+app.post("/api/memories/:id/correct",async(request)=>{
+  const params=z.object({id:z.string().uuid()}).parse(request.params);
+  const body=z.object({summary:z.string().min(3).max(280)}).parse(request.body);
+  const {creature,player}=await authenticatedPlayer(request.headers);
+  return withTransaction((client)=>correctMemory(client,player.id,creature.id,params.id,body.summary));
+});
+
+app.delete("/api/memories/:id",async(request)=>{
+  const params=z.object({id:z.string().uuid()}).parse(request.params);
+  const {creature,player}=await authenticatedPlayer(request.headers);
+  await withTransaction((client)=>deleteMemory(client,player.id,creature.id,params.id));
+  return {ok:true};
+});
+
 app.post("/api/actions",{config:{rateLimit:{max:20,timeWindow:"1 minute"}}},async(request)=>{
   const body=z.object({action:z.enum(["explore","rest","talk","help","social"])}).parse(request.body);
   const {creature,player}=await authenticatedPlayer(request.headers);
   await withTransaction((client)=>assertOnboardingComplete(client,creature.id));
   const socialTarget=body.action==="social"?await pickSocialTarget(db,creature.id):null;
-  const profileResult=await db.query("SELECT base_url,model,encrypted_api_key FROM ai_profiles WHERE player_id=$1 AND enabled=true",[player.id]);
+  const memoryFacts=await withTransaction((client)=>approvedMemoryPacket(client,creature.id));
   const baseStory=buildStory(body.action,creature.name,creature.personality,Date.now(),socialTarget?.name);
   const sceneId=`game_action:${body.action}`;
-  const narrative=await enrichStory(profileResult.rows[0]??null,baseStory,creature.personality.voice,{sceneId,canonicalFacts:[`${creature.name} is the player's creature.`,`The action is ${body.action}.`],allowedReferences:[creature.name,"Numa","Dr. Sock","Momo"]});
-  await logNarrative(player.id,creature.id,sceneId,narrative.metadata).catch((error)=>app.log.warn({error,sceneId},"AI telemetry failed"));
+  const narrative=await enrichForPlayer(player.id,creature.id,creature.personality.voice,baseStory,{
+    sceneId,
+    priority:"routine",
+    canonicalFacts:[`${creature.name} is the player's creature.`,`The action is ${body.action}.`,...memoryFacts.map((summary)=>`Approved memory: ${summary}`)],
+    allowedReferences:[creature.name,"Numa","Dr. Sock","Momo",...memoryFacts]
+  });
   return withTransaction((client)=>performAction(client,creature.id,body.action,narrative.story,socialTarget?.slug));
 });
 
@@ -200,7 +304,15 @@ app.setErrorHandler((error,_request,reply)=>{
   if(error instanceof z.ZodError) return reply.code(400).send({error:"That request didn't look quite right. Try again?",code:"bad_input"});
   const statusCode=(error as {statusCode?:number}).statusCode;
   if(typeof statusCode==="number"&&statusCode>=400&&statusCode<500) return reply.code(statusCode).send({error:statusCode===429?"Too many things at once — the creature needs a breath.":"That request didn't look quite right.",code:`http_${statusCode}`});
-  app.log.error(error);
+  // Transitional mapping for modules that still throw plain Errors (memory.ts, notifications.ts);
+  // new code should throw AppError instead.
+  const message=error instanceof Error?error.message:"unknown error";
+  const conflict=message.includes("already selected")||message.includes("must be completed")||message.includes("must be selected first")||message.includes("already moved on")||message.includes("already complete")||message.includes("already corrected")||message.includes("already deleted")||message.includes("already completed")||message.includes("not enough");
+  const badInput=message.startsWith("name ")||message.startsWith("memory correction")||message.includes("unsupported characters")||message.includes("choice is not available")||message.includes("world memories cannot")||message.includes("timezone")||message.includes("quiet hours")||message.includes("HH:mm")||message.includes("local return date");
+  const notFound=message.includes("not found");
+  if(badInput) return reply.code(400).send({error:message,code:"bad_input"});
+  if(notFound) return reply.code(404).send({error:message,code:"not_found"});
+  if(conflict) return reply.code(409).send({error:message,code:"conflict"});
   return reply.code(500).send({error:"Something wobbled on our side. Try again in a moment.",code:"internal"});
 });
 
@@ -212,6 +324,7 @@ const workerTimer=setInterval(()=>{
   workerTick+=1;
   const runCleanup=workerTick%40===0;
   void withTransaction(async(client)=>{
+    await scheduleDueDailyReturnNotifications(client);
     await processDueEvents(client);
     await dispatchOutbox(client);
     if(runCleanup) await cleanupProcessedWork(client);

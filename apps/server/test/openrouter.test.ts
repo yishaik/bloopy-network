@@ -26,6 +26,6 @@ describe("curated OpenRouter catalog",()=>{
     expect(modelForMode("balanced").model).toBe("qwen/qwen3.5-9b");
     expect(modelForMode("creative").model).toBe("google/gemini-3.1-flash-lite");
     expect(modelForMode("smart").model).toBe("openai/gpt-5.2");
-    expect(()=>modelForMode("anything" as never)).toThrow("not allowed");
+    expect(()=>modelForMode("anything" as never)).toThrow("openrouter_mode_invalid");
   });
 });

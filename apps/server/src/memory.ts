@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { AppError } from "./errors.js";
 import type { Personality, StoryCard } from "./types.js";
 
 export type MemoryTier="working"|"episodic"|"identity"|"world";
@@ -81,10 +82,10 @@ function dateOnly(value:unknown):string {
 
 export function normalizeMemoryCorrection(raw:string):string {
   const value=raw.normalize("NFKC").replace(/\s+/g," ").trim();
-  if(value.length<3)throw new Error("memory correction is too short");
-  if(value.length>280)throw new Error("memory correction is too long");
-  if(/[<>]/u.test(value)||/(?:https?:\/\/|www\.)/iu.test(value))throw new Error("memory correction contains unsupported content");
-  if(prohibitedCorrectionPatterns.some((pattern)=>pattern.test(value)))throw new Error("memory correction looks like an instruction rather than a memory");
+  if(value.length<3)throw new AppError("memory_too_short",400,"That memory needs a few more words.");
+  if(value.length>280)throw new AppError("memory_too_long",400,"Memories cap at 280 characters. Keep the essence.");
+  if(/[<>]/u.test(value)||/(?:https?:\/\/|www\.)/iu.test(value))throw new AppError("memory_unsupported",400,"Memories cannot hold links or angle brackets.");
+  if(prohibitedCorrectionPatterns.some((pattern)=>pattern.test(value)))throw new AppError("memory_not_a_memory",400,"That reads like an instruction, not a memory. Describe what happened instead.");
   return value;
 }
 
@@ -201,14 +202,14 @@ export async function correctMemory(client:pg.PoolClient,playerId:string,creatur
   const summary=normalizeMemoryCorrection(rawSummary);
   const result=await client.query(`SELECT * FROM memories WHERE id=$1 AND creature_id=$2 FOR UPDATE`,[memoryId,creatureId]);
   const original=result.rows[0];
-  if(!original)throw new Error("memory not found");
-  if(original.tier==="world")throw new Error("world memories cannot be edited here");
+  if(!original)throw new AppError("memory_not_found",404,"That memory seems to have faded already.");
+  if(original.tier==="world")throw new AppError("memory_world_locked",409,"World facts are read-only — the world insists.");
   const existing=await client.query(`SELECT * FROM memories WHERE corrected_from_id=$1 AND deleted_at IS NULL`,[memoryId]);
   if(existing.rowCount) {
     if(String(existing.rows[0].summary)===summary)return memoryView(existing.rows[0]);
-    throw new Error("memory was already corrected");
+    throw new AppError("memory_already_corrected",409,"That memory was already corrected.");
   }
-  if(original.deleted_at)throw new Error("memory was already deleted");
+  if(original.deleted_at)throw new AppError("memory_already_deleted",409,"That memory was already removed.");
   await client.query(`UPDATE memories SET canonical_status='superseded',deleted_at=now(),updated_at=now() WHERE id=$1`,[memoryId]);
   const inserted=await client.query(`INSERT INTO memories (creature_id,source_type,source_version,summary,importance,is_private,tier,privacy_level,confidence,canonical_status,world_id,corrected_from_id) VALUES ($1,'player_correction','memory-editor-v1',$2,$3,$4,$5,$6,1,'user_asserted',$7,$8) RETURNING *`,[
     creatureId,summary,original.importance,original.is_private,original.tier,original.privacy_level,original.world_id,memoryId
@@ -227,8 +228,8 @@ export async function correctMemory(client:pg.PoolClient,playerId:string,creatur
 export async function deleteMemory(client:pg.PoolClient,playerId:string,creatureId:string,memoryId:string):Promise<void> {
   const result=await client.query(`SELECT * FROM memories WHERE id=$1 AND creature_id=$2 FOR UPDATE`,[memoryId,creatureId]);
   const memory=result.rows[0];
-  if(!memory)throw new Error("memory not found");
-  if(memory.tier==="world")throw new Error("world memories cannot be deleted here");
+  if(!memory)throw new AppError("memory_not_found",404,"That memory seems to have faded already.");
+  if(memory.tier==="world")throw new AppError("memory_world_locked",409,"World facts are read-only — the world insists.");
   if(memory.deleted_at)return;
   await client.query(`UPDATE memories SET canonical_status='rejected',deleted_at=now(),updated_at=now() WHERE id=$1`,[memoryId]);
   await client.query(`INSERT INTO memory_audit_events (creature_id,memory_id,event_type,actor_type,details) VALUES ($1,$2,'deleted','player',$3)`,[creatureId,memoryId,JSON.stringify({tier:memory.tier,worldId:memory.world_id})]);
@@ -264,17 +265,17 @@ export async function ensureDailyReturn(client:pg.PoolClient,playerId:string,cre
 }
 
 export async function completeDailyReturn(client:pg.PoolClient,playerId:string,creatureId:string,instanceId:string,choice:DailyReturnChoice):Promise<DailyReturnResult> {
-  if(!dailyChoices.some((entry)=>entry.id===choice))throw new Error("daily return choice is not available");
+  if(!dailyChoices.some((entry)=>entry.id===choice))throw new AppError("daily_invalid_choice",400,"That choice is not part of today's moment.");
   const instanceResult=await client.query(`SELECT dri.*,m.summary AS memory_summary FROM daily_return_instances dri LEFT JOIN memories m ON m.id=dri.memory_id AND m.deleted_at IS NULL WHERE dri.id=$1 AND dri.creature_id=$2 FOR UPDATE OF dri`,[instanceId,creatureId]);
   const instance=instanceResult.rows[0];
-  if(!instance)throw new Error("daily return not found");
+  if(!instance)throw new AppError("daily_not_found",404,"Today's moment could not be found. Refresh and try again.");
   const creatureResult=await client.query(`SELECT name,personality,mood,xp,level FROM creatures WHERE id=$1 FOR UPDATE`,[creatureId]);
   const creature=creatureResult.rows[0];
-  if(!creature)throw new Error("creature not found");
+  if(!creature)throw new AppError("creature_not_found",404,"No creature lives here yet.");
   const story=resultStory(String(creature.name),choice,instance.memory_summary?String(instance.memory_summary):undefined);
   const existingEvolution=await client.query(`SELECT personality_after,mood_after,trait_deltas,explanation FROM personality_events WHERE creature_id=$1 AND source_key=$2`,[creatureId,`daily-return:${instanceId}`]);
   if(instance.status==="completed") {
-    if(instance.choice_id!==choice)throw new Error("daily return was already completed");
+    if(instance.choice_id!==choice)throw new AppError("daily_already_completed",409,"Today's thought already found its place.");
     const saved=existingEvolution.rows[0];
     const evolution:PersonalityEvolution=saved
       ? {personality:saved.personality_after as Personality,mood:String(saved.mood_after),deltas:saved.trait_deltas as Partial<Record<TraitKey,number>>,explanation:String(saved.explanation)}

@@ -71,7 +71,7 @@ function secureEquals(candidate:unknown,expected:string):boolean {
   return left.length===right.length&&timingSafeEqual(left,right);
 }
 
-app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.9.0"};});
+app.get("/health",async()=>{await db.query("SELECT 1");return {ok:true,service:"bloopy-network",version:"0.9.1"};});
 
 function initDataFrom(headers:Record<string,string|string[]|undefined>):string|undefined {
   return typeof headers["x-telegram-init-data"]==="string"?headers["x-telegram-init-data"]:undefined;
@@ -331,15 +331,6 @@ app.setErrorHandler((error,_request,reply)=>{
   if(error instanceof z.ZodError) return reply.code(400).send({error:"That request didn't look quite right. Try again?",code:"bad_input"});
   const statusCode=(error as {statusCode?:number}).statusCode;
   if(typeof statusCode==="number"&&statusCode>=400&&statusCode<500) return reply.code(statusCode).send({error:statusCode===429?"Too many things at once — the creature needs a breath.":"That request didn't look quite right.",code:`http_${statusCode}`});
-  // Transitional mapping for modules that still throw plain Errors (memory.ts, notifications.ts, openrouter.ts);
-  // new code should throw AppError instead.
-  const message=error instanceof Error?error.message:"unknown error";
-  const conflict=message.includes("already selected")||message.includes("must be completed")||message.includes("must be selected first")||message.includes("already moved on")||message.includes("already complete")||message.includes("already corrected")||message.includes("already deleted")||message.includes("already completed")||message.includes("already used")||message.includes("not enough");
-  const badInput=message.startsWith("name ")||message.startsWith("memory correction")||message.includes("unsupported characters")||message.includes("choice is not available")||message.includes("world memories cannot")||message.includes("timezone")||message.includes("quiet hours")||message.includes("HH:mm")||message.includes("local return date")||message.includes("OAuth state")||message.includes("OpenRouter mode");
-  const notFound=message.includes("not found")||message.includes("not connected");
-  if(badInput) return reply.code(400).send({error:message,code:"bad_input"});
-  if(notFound) return reply.code(404).send({error:message,code:"not_found"});
-  if(conflict) return reply.code(409).send({error:message,code:"conflict"});
   app.log.error(error);
   return reply.code(500).send({error:"Something wobbled on our side. Try again in a moment.",code:"internal"});
 });

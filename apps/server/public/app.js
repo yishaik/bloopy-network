@@ -149,6 +149,7 @@ function renderGame(){
   $("creature-name").textContent=creature.name;$("mood-line").textContent=`${creature.mood} · ${creature.current_location.replaceAll("_"," ")}`;
   $("avatar").src=`/api/creatures/${creature.id}/avatar.svg?v=${creature.level}-${encodeURIComponent(creature.updated_at||"")}`;
   $("energy").textContent=creature.energy;$("level").textContent=`Lv ${creature.level}`;$("xp").textContent=creature.xp;$("stars").textContent=creature.stars??0;
+  $("account-creature-name").textContent=creature.name;
   renderDailyReturn();renderPersonalityChange();renderStoryArc();renderQuests();renderInventory();renderShop();renderRelationships();renderMemories();renderNotifications();renderAIStatus();
   $("story-feed").innerHTML=(state.stories||[]).map(storyCard).join("");
   $("npc-list").innerHTML=(state.npcs||[]).map((npc)=>`<div class="npc"><img src="/api/creatures/${npc.id}/avatar.svg"><b>${escapeHtml(npc.name)}</b><small>${escapeHtml(npc.current_location.replaceAll("_"," "))}</small></div>`).join("");
@@ -184,6 +185,48 @@ async function saveNotifications(event){
   catch(error){toast(error.message);setButtonsDisabled($("notification-form"),false);}
 }
 
+const accountActions={
+  reset:{word:"RESET",title:"Start over with a new creature?",submit:"Delete this creature and start over",path:"/api/account/creature/reset",
+    body:"This permanently deletes your creature, every story, memory, quest, item and relationship it collected, and revokes any creature bot. Your Telegram account stays, and a new creature will be waiting the next time you open Bloopy.",
+    done:"Your creature has been removed. Reopening Bloopy will start a new one."},
+  delete:{word:"DELETE",title:"Delete your Bloopy account?",submit:"Delete my account and all my data",path:"/api/account/delete",
+    body:"This permanently deletes your account, your creature, every story and memory, your notification settings, any stored model credential and any creature bot. Nothing is kept and nothing can be restored.",
+    done:"Your account and data have been deleted."}
+};
+let pendingAccountAction=null;
+
+function openAccountDialog(action){
+  pendingAccountAction=action;const copy=accountActions[action];
+  $("account-dialog-title").textContent=copy.title;$("account-dialog-body").textContent=copy.body;
+  $("account-dialog-word").textContent=copy.word;$("account-dialog-submit").textContent=copy.submit;
+  $("account-confirm").value="";setButtonsDisabled($("account-form"),false);
+  const dialog=$("account-dialog");if(typeof dialog.showModal==="function")dialog.showModal();else dialog.setAttribute("open","");
+}
+function closeAccountDialog(){pendingAccountAction=null;const dialog=$("account-dialog");if(typeof dialog.close==="function")dialog.close();else dialog.removeAttribute("open");}
+
+async function submitAccountAction(event){
+  event.preventDefault();if(!pendingAccountAction)return;
+  const copy=accountActions[pendingAccountAction];setButtonsDisabled($("account-form"),true);
+  try{
+    await api(copy.path,{method:"POST",body:JSON.stringify({confirm:$("account-confirm").value})});
+    closeAccountDialog();toast(copy.done);await refresh();
+  }catch(error){toast(error.message);setButtonsDisabled($("account-form"),false);}
+}
+
+async function exportAccountData(){
+  const button=$("account-export");button.disabled=true;
+  try{
+    const response=await fetch("/api/account/export",{headers});
+    if(!response.ok)throw new Error((await response.json().catch(()=>({}))).error||"Export failed");
+    const blob=await response.blob();const url=URL.createObjectURL(blob);
+    const link=document.createElement("a");link.href=url;link.download="bloopy-export.json";document.body.append(link);link.click();link.remove();
+    // Telegram's in-app browser can revoke the object URL before the download starts, so give it a beat.
+    setTimeout(()=>URL.revokeObjectURL(url),30_000);
+    toast("Your data export has been downloaded");
+  }catch(error){toast(error.message);}
+  finally{button.disabled=false;}
+}
+
 document.addEventListener("click",(event)=>{
   const wakeButton=event.target.closest("button[data-wake-choice]");if(wakeButton){void chooseWake(wakeButton.dataset.wakeChoice);return;}
   const markerButton=event.target.closest("button[data-marker]");if(markerButton){selectedMarker=markerButton.dataset.marker;document.querySelectorAll("button[data-marker]").forEach((button)=>{const selected=button.dataset.marker===selectedMarker;button.classList.toggle("selected",selected);button.setAttribute("aria-pressed",String(selected));});return;}
@@ -196,8 +239,25 @@ document.addEventListener("click",(event)=>{
 });
 
 $("identity-form").addEventListener("submit",finishGenesis);$("memory-form").addEventListener("submit",saveMemoryCorrection);$("memory-cancel").addEventListener("click",closeMemoryEditor);$("notification-form").addEventListener("submit",saveNotifications);
+$("account-export").addEventListener("click",()=>{void exportAccountData();});
+$("account-reset").addEventListener("click",()=>openAccountDialog("reset"));
+$("account-delete").addEventListener("click",()=>openAccountDialog("delete"));
+$("account-form").addEventListener("submit",submitAccountAction);$("account-cancel").addEventListener("click",closeAccountDialog);
 
-$("share").addEventListener("click",()=>{const latest=state.stories?.[0];if(!latest)return;const url=state.managerBotUsername?`https://t.me/${state.managerBotUsername}?start=meet_${state.creature.slug}`:`${location.origin}/?startapp=meet_${state.creature.slug}`;const share=`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(`${state.creature.name}: ${latest.title}`)}`;tg?.openTelegramLink?tg.openTelegramLink(share):window.open(share,"_blank","noopener");});
+$("share").addEventListener("click",async()=>{
+  const button=$("share");button.disabled=true;
+  try{
+    // The share page is keyed by an opaque token, so a shared link never carries the Telegram id
+    // that the creature slug encodes.
+    const card=await api("/api/share");
+    if(!card.ready){toast("Finish waking your creature before sharing it");return;}
+    const latest=state.stories?.[0];
+    const text=latest?`${state.creature.name}: ${latest.title}`:`${state.creature.name} is living a small continuing story.`;
+    const share=`https://t.me/share/url?url=${encodeURIComponent(card.url)}&text=${encodeURIComponent(text)}`;
+    tg?.openTelegramLink?tg.openTelegramLink(share):window.open(share,"_blank","noopener");
+  }catch(error){toast(error.message);}
+  finally{button.disabled=false;}
+});
 $("spawn-bot").addEventListener("click",async()=>{try{const {url}=await api("/api/bots/spawn-link");tg?.openTelegramLink?tg.openTelegramLink(url):window.open(url,"_blank","noopener");}catch(error){toast(error.message);}});
 $("ai-form").addEventListener("submit",async(event)=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));try{await api("/api/settings/ai",{method:"POST",body:JSON.stringify(values)});event.currentTarget.reset();toast("Private model connection saved");await refresh();}catch(error){toast(error.message);}});
 

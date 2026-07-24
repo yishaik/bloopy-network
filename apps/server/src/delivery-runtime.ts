@@ -1,4 +1,7 @@
 import { randomBytes } from "node:crypto";
+import { readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type pg from "pg";
 import { config } from "./config.js";
 import { open, seal } from "./crypto.js";
@@ -230,17 +233,25 @@ export async function replayOutboxItem(client:pg.PoolClient,id:string,operator:s
   return Boolean(updated.rowCount);
 }
 
+// Every migration this build ships. Readiness asserts the deployed schema covers all of them rather
+// than one named file, so adding a migration cannot leave readiness reporting green against a
+// schema the running code already depends on.
+const shippedMigrations=readdirSync(join(dirname(fileURLToPath(import.meta.url)),"..","migrations")).filter((file)=>file.endsWith(".sql")).sort();
+
 export async function readinessSnapshot(client:pg.PoolClient){
   const [migration,updates,outbox,controls]=await Promise.all([
-    client.query(`SELECT 1 FROM schema_migrations WHERE filename='019_telegram_delivery_runtime.sql'`),
+    client.query(`SELECT filename FROM schema_migrations WHERE filename = ANY($1::text[])`,[shippedMigrations]),
     client.query(`SELECT count(*)::int AS count,COALESCE(EXTRACT(EPOCH FROM (now()-min(received_at)))::int,0) AS oldest_seconds FROM telegram_updates WHERE status IN ('received','retryable','processing')`),
     client.query(`SELECT count(*)::int AS count,COALESCE(EXTRACT(EPOCH FROM (now()-min(created_at)))::int,0) AS oldest_seconds FROM outbox WHERE status IN ('pending','retryable','sending')`),
     client.query(`SELECT control_key,enabled,reason FROM runtime_controls ORDER BY control_key`)
   ]);
+  const applied=new Set(migration.rows.map((row)=>String(row.filename)));
+  const missingMigrations=shippedMigrations.filter((file)=>!applied.has(file));
+  const migrationsReady=missingMigrations.length===0;
   const updateCount=Number(updates.rows[0]?.count??0);const outboxCount=Number(outbox.rows[0]?.count??0);
-  const ready=Boolean(migration.rowCount)&&updateCount<=config.READY_MAX_UPDATE_BACKLOG&&outboxCount<=config.READY_MAX_OUTBOX_BACKLOG;
+  const ready=migrationsReady&&updateCount<=config.READY_MAX_UPDATE_BACKLOG&&outboxCount<=config.READY_MAX_OUTBOX_BACKLOG;
   return {ready,degraded:config.DEGRADED_MODE||!controls.rows.find((row)=>row.control_key==="risky_mutations")?.enabled,
-    migrationsReady:Boolean(migration.rowCount),updates:{count:updateCount,oldestSeconds:Number(updates.rows[0]?.oldest_seconds??0)},
+    migrationsReady,missingMigrations,updates:{count:updateCount,oldestSeconds:Number(updates.rows[0]?.oldest_seconds??0)},
     outbox:{count:outboxCount,oldestSeconds:Number(outbox.rows[0]?.oldest_seconds??0)},controls:controls.rows};
 }
 

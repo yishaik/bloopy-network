@@ -4,3 +4,7 @@ dist/
 *.log
 .DS_Store
 coverage/
+
+# local backup and restore drills
+backups/
+*.dump

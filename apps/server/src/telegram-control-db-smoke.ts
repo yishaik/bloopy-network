@@ -4,6 +4,7 @@ import { seal } from "./crypto.js";
 import { db } from "./db.js";
 import { AppError } from "./errors.js";
 import { authorizeManagedHuman,createBotInteraction,finalizeManagedBotRevocation,formatBotInteractionEnvelope,processBotInteractionTurn,setManagedBotInteractionConsent,upsertManagedBotAccessRule } from "./telegram-control.js";
+import { replayProcessedUpdate,verificationSnapshot } from "./verification.js";
 
 function assert(condition:unknown,message:string):asserts condition{if(!condition)throw new Error(message)}
 async function main(){
@@ -50,6 +51,30 @@ async function main(){
     assert(firstAction.questCompleted.join("|")===replayAction.questCompleted.join("|"),"canonical replay changed quest results");
     const actionCounts=await client.query(`SELECT (SELECT count(*) FROM game_events WHERE command_key='telegram-smoke-action') AS events,(SELECT count(*) FROM story_entries WHERE creature_id=$1) AS stories,(SELECT xp FROM creatures WHERE id=$1) AS xp`,[creatureA.id]);
     assert(Number(actionCounts.rows[0].events)===1,"canonical replay created duplicate game events");assert(Number(actionCounts.rows[0].stories)===1,"canonical replay created duplicate story entries");assert(Number(actionCounts.rows[0].xp)===3,"canonical replay granted XP more than once");
+    // --- #17 verification surface ------------------------------------------------------------
+    // The gate runner reads production state through this snapshot, so it must never carry a
+    // credential or a Telegram user id out of the database.
+    const updateId=Math.floor(Math.random()*2_000_000_000);
+    await client.query(`INSERT INTO telegram_updates (source,update_id,payload,status,completed_at) VALUES ($1,$2,$3,'completed',now())`,[`managed:${botA}`,updateId,JSON.stringify({update_id:updateId,message:{message_id:9,text:"/adventure",chat:{id:ownerA,type:"private"},from:{id:ownerA,first_name:"Owner"}}})]);
+    await client.query(`INSERT INTO game_events (aggregate_id,event_type,payload,command_key) VALUES ($1,'player_action','{}',$2)`,[creatureA.id,`telegram:managed:${botA}:${updateId}`]);
+    const snapshot=await verificationSnapshot(client,60);
+    const serializedSnapshot=JSON.stringify(snapshot);
+    for(const secret of ["token-a","token-b","secret-a-1234567890","secret-b-1234567890","token_cipher","webhook_secret",String(ownerA),String(ownerB)]){
+      assert(!serializedSnapshot.includes(secret),`verification snapshot leaked "${secret}"`);
+    }
+    const snapshotBot=snapshot.bots.find((bot)=>bot.botId===String(botA));
+    assert(snapshotBot?.tokenVersion===1&&snapshotBot.accessPolicy==="allowlist","verification snapshot lost managed bot state");
+    assert(snapshotBot.accessRules.every((rule)=>rule.chatType==="private"?rule.chatId===null:true),"verification snapshot exposed a private-chat id");
+    const snapshotUpdate=snapshot.updates.find((update)=>update.updateId===String(updateId));
+    assert(snapshotUpdate?.canonicalEffects===1,"verification snapshot did not attribute the canonical effect to its update");
+    const probe=await replayProcessedUpdate(client,`managed:${botA}`,updateId);
+    assert(probe.deduplicated,"the ingress accepted a replayed update; webhook dedup is broken");
+    assert(probe.canonicalEffects===1,"the replay probe duplicated a canonical effect");
+    const afterProbe=await client.query(`SELECT count(*)::int AS count FROM telegram_updates WHERE source=$1 AND update_id=$2`,[`managed:${botA}`,updateId]);
+    assert(Number(afterProbe.rows[0].count)===1,"the replay probe inserted a duplicate ingress row");
+    let missingProbe=false;try{await replayProcessedUpdate(client,`managed:${botA}`,1)}catch(error){missingProbe=error instanceof AppError&&error.code==="update_not_found"}
+    assert(missingProbe,"replaying an unknown update did not report update_not_found");
+
     await finalizeManagedBotRevocation(client,ownerA,botA);const revoked=await client.query(`SELECT enabled,revoked_at,allow_bot_interactions FROM managed_bots WHERE bot_id=$1`,[botA]);assert(!revoked.rows[0].enabled&&revoked.rows[0].revoked_at&&!revoked.rows[0].allow_bot_interactions,"revoke did not disable the managed bot");assert(!(await authorizeManagedHuman(client,{botId:botA,telegramUserId:ownerA,chatId:ownerA,chatType:"private"})),"revoked bot remained usable");
     await client.query("ROLLBACK");console.log("Telegram control-plane database smoke test passed");
   }catch(error){await client.query("ROLLBACK").catch(()=>undefined);throw error}finally{client.release();await db.end()}

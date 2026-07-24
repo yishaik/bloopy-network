@@ -1,7 +1,7 @@
 {
   "name": "@bloopy/server",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.12.0",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -15,7 +15,8 @@
     "test:notifications-db": "tsx src/notifications-db-smoke.ts",
     "test:openrouter-db": "tsx src/openrouter-db-smoke.ts",
     "test:telegram-control-db": "tsx src/telegram-control-db-smoke.ts",
-    "test:delivery-runtime-db": "tsx src/delivery-runtime-db-smoke.ts"
+    "test:delivery-runtime-db": "tsx src/delivery-runtime-db-smoke.ts",
+    "test:account-db": "tsx src/account-db-smoke.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",

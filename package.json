@@ -1,8 +1,10 @@
 {
   "name": "bloopy-network",
   "private": true,
-  "version": "0.1.0",
-  "workspaces": ["apps/*"],
+  "version": "0.12.0",
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev": "npm run dev -w @bloopy/server",
     "build": "npm run build -w @bloopy/server",
@@ -10,7 +12,14 @@
     "typecheck": "npm run typecheck -w @bloopy/server",
     "test": "npm run test -w @bloopy/server",
     "migrate": "npm run migrate -w @bloopy/server",
-    "eval:narrative": "npm run eval:narrative -w @bloopy/server"
+    "eval:narrative": "npm run eval:narrative -w @bloopy/server",
+    "test:account-db": "npm run test:account-db -w @bloopy/server",
+    "release:check": "node scripts/release-check.mjs",
+    "backup": "bash scripts/backup-database.sh",
+    "verify:restore": "bash scripts/verify-restore.sh",
+    "verify:gate": "node scripts/verify-gate.mjs"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }

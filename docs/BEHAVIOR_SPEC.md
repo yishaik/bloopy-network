@@ -2,436 +2,324 @@
 
 ## Purpose
 
-This document defines the product-level behavior Bloopy Network must exhibit when complete. It is an acceptance contract shared by product, design, engineering, QA and operations.
+This document is the product-level acceptance contract for Bloopy Network. A feature is complete only when its player journey, persistence, authorization, failure handling, privacy, tests and operational controls satisfy this contract.
 
-It distinguishes:
+Status terms:
 
-- behavior that is already shipped;
-- behavior that is staged behind production gates;
-- behavior that is planned and still requires implementation.
-
-A feature is not complete because a screen exists. It is complete only when the player-visible behavior, persistence, authorization, failure handling, privacy boundaries, tests and operational controls all satisfy this contract.
+- **Shipped** — implemented on `main` and covered by automated checks.
+- **Staged** — implemented but disabled/restricted until production verification.
+- **Planned** — specified but not implemented.
 
 ## Global invariants
 
-These rules apply everywhere.
+1. One Telegram account maps to one canonical player identity.
+2. A creature remains recognizable across sessions and surfaces.
+3. Canonical state changes only through validated deterministic domain logic.
+4. Retries, duplicate updates and double taps do not duplicate canonical effects.
+5. Optional AI cannot create legal choices, grant rewards or write canonical state.
+6. Secrets and private identifiers never appear in public/player-safe output.
+7. Risky Telegram/social surfaces default off until verified.
+8. Leaving the game causes no punishment or valid-progress loss.
+9. Destructive/privacy-sensitive actions are explicit and owner-authorized.
+10. External delivery has an inspectable lifecycle state.
+11. Public sharing uses explicit allowlisted fields and opaque tokens.
+12. A player can export, reset and delete their data without support intervention.
 
-1. **One player owns one canonical player identity per Telegram account.**
-2. **A creature remains recognizable across sessions, devices and delivery surfaces.**
-3. **Canonical state changes only through validated deterministic application logic.**
-4. **Retries, duplicate updates and double taps do not duplicate canonical effects.**
-5. **Optional AI cannot create choices, grant rewards or write canonical state.**
-6. **No secret or private identifier appears in player responses, public logs or shareable content.**
-7. **Risky social and Telegram surfaces are disabled by default until verified.**
-8. **A player can leave without penalty and return without losing valid progress.**
-9. **Every destructive or privacy-sensitive action is explicit and owner-authorized.**
-10. **Every external delivery has an inspectable operational state.**
-
-## Status vocabulary
-
-- **Shipped** — implemented on `main` and covered by automated checks.
-- **Staged** — implemented but disabled or restricted until production verification.
-- **Planned** — specified but not yet implemented.
-
-## 1. First launch and Character Genesis
+## 1. Bootstrap and Character Genesis
 
 **Status: shipped**
 
-### Expected behavior
+- Opening the manager bot/Mini App creates or resumes exactly one player and one creature.
+- Concurrent bootstrap converges on the same records.
+- The world is populated immediately.
+- Wake, name and marker choices persist.
+- Refresh resumes onboarding.
+- Repeated completion does not duplicate rewards, memories or story.
+- A referral is attributed only for a genuinely new player arriving before onboarding completion.
+- Referral payout occurs once when onboarding completes and cannot be farmed through reset.
+- Invalid names return friendly errors without validation internals.
 
-- Opening the manager bot or Mini App creates or resumes exactly one player and one player creature.
-- Concurrent or repeated bootstrap requests converge on the same records.
-- The player begins in a populated world rather than an empty dashboard.
-- Genesis presents story choices for waking, naming and marking the creature.
-- The selected name and visual marker persist.
-- Refreshing during onboarding resumes the current step.
-- Completing onboarding more than once does not duplicate rewards, memories or story entries.
-- Invalid names receive a friendly error without internal validation details.
+Failure behavior:
 
-### Failure behavior
-
-- If the database is unavailable, return a curated service error and do not create partial identity records.
-- If a request is duplicated, return the existing result.
-- If the app is in read-only degraded mode, allow safe reads but reject risky onboarding writes with an understandable message.
+- database failure creates no partial identity;
+- duplicate requests return existing/replayed results;
+- degraded mode allows safe reads and rejects risky writes clearly.
 
 ## 2. Creature identity and avatar
 
-**Status: shipped foundation; planned expansion**
+**Status: shipped foundation**
 
-### Expected behavior
-
-- The avatar is rendered from a versioned genome.
-- The same genome produces a visually consistent creature.
-- Evolution adds bounded visual changes while preserving recognizability.
-- Public avatar responses contain no private player information.
-- Future image-generation workflows, if added, must use the genome and approved reference state to preserve consistency.
-
-### Prohibited behavior
-
-- Replacing the creature with an unrelated generated image.
-- Encoding secrets or private metadata into avatar URLs or SVG content.
-- Allowing user text to inject executable SVG markup.
+- A versioned genome is the canonical visual identity.
+- The same genome renders a consistent SVG.
+- Evolution adds bounded changes while preserving recognition.
+- Public avatar/card content contains no private owner data.
+- User text cannot inject executable SVG.
+- Future generated images must remain constrained by the genome/reference identity.
 
 ## 3. Dashboard and persistence
 
 **Status: shipped**
 
-### Expected behavior
+The dashboard presents canonical creature identity, mood, energy, XP, level, stars, quests, relationships, inventory, story/daily return, recent history, memories, notifications and AI connection state as relevant.
 
-The dashboard should present the current canonical state:
+Closing/reopening Telegram must not reset progress. A refresh after a committed action shows the committed state.
 
-- creature identity and avatar;
-- mood, energy, XP, level and stars;
-- active quests and relationships;
-- inventory;
-- current story or daily-return opportunity;
-- recent story history;
-- memories and notification state where relevant.
-
-Closing and reopening Telegram must not reset valid progress. Refreshing after an action must display the committed state.
-
-## 4. Normal actions
+## 4. Actions, energy and progression
 
 **Status: shipped**
-
-### Expected behavior
 
 - Only declared actions are accepted.
-- Energy costs and prerequisites are validated before canonical mutation.
-- The action, reward, quest progress, relationship progress, story entry and analytics commit transactionally where they belong to the same canonical effect.
-- A command/idempotency key prevents duplicate effects.
-- A deterministic story is always available.
-- Optional AI enrichment happens outside the canonical decision path.
+- Costs/prerequisites are checked before mutation.
+- Canonical effects commit transactionally.
+- Command keys prevent duplicate effects.
+- Energy regeneration is deterministic from persisted state/time.
+- Concurrent actions cannot overspend energy.
+- Quest completion and rewards occur once.
+- Shop purchases verify balance/ownership transactionally.
+- XP, stars, inventory and evolution persist.
+- Deterministic story text always exists.
+- AI failure never rolls back canonical state.
 
-### Failure behavior
-
-- Insufficient energy produces a friendly, actionable response.
-- AI failure returns deterministic text without rolling back committed game state.
-- A client retry returns the same canonical result when possible.
-
-## 5. Energy and time
-
-**Status: shipped**
-
-### Expected behavior
-
-- Energy regeneration is derived deterministically from persisted state and elapsed time.
-- Reading state may apply lazy regeneration without creating repeated rewards.
-- Energy never becomes negative because of concurrent actions.
-- Rest remains available as a meaningful low-pressure action.
-
-## 6. Quests, rewards and economy
-
-**Status: shipped foundation**
-
-### Expected behavior
-
-- Quest progress is tied to explicit canonical events.
-- Completion occurs once.
-- XP, stars and items are granted once.
-- The shop verifies ownership, balance, inventory rules and price transactionally.
-- Purchases remain visible after refresh.
-- Evolution tiers follow declared progression rules.
-
-### Planned behavior
-
-- More quests and story-aware items.
-- World-scoped economies where a World Pack defines them.
-- Clearer reward previews and inventory use flows.
-
-## 7. Authored story arcs
+## 5. Authored story arcs
 
 **Status: shipped engine and two arcs**
 
-### Expected behavior
+- Arcs activate only after prerequisites.
+- Only legal choices for the current beat are returned.
+- A choice applies once and resumes correctly after refresh.
+- Route inheritance is explicit.
+- Rewards are bounded and replay-safe.
+- Every visible beat has deterministic fallback narration.
+- AI may change presentation only after canonical facts are fixed.
 
-- An arc activates only when prerequisites are satisfied.
-- The server provides only legal choices for the current beat.
-- A choice applies canonical effects once and advances predictably.
-- Refreshing resumes the current beat or completed state.
-- Previous route and relationship decisions may be inherited explicitly.
-- AI may rewrite the presentation only after canonical facts are fixed.
-- Every arc has deterministic fallback narration.
+## 6. Memories and personality
 
-### Content requirements
+**Status: shipped**
 
-- Each beat is understandable in a short Telegram session.
-- Choices differ meaningfully in tone, relationship or route.
-- Rewards are declared and bounded.
-- No hidden prompt output becomes authoritative game state.
-
-## 8. Memories and personality
-
-**Status: shipped foundation**
-
-### Expected behavior
-
-- Players can view active memories that affect continuity.
-- Editable memories can be corrected or removed by the owning player.
-- Corrections preserve lineage and auditability.
+- Players can view active relevant memories.
+- Editable memories can be corrected or removed by the owner.
+- Corrections preserve lineage/auditability.
 - World canon is read-only.
-- Raw Telegram text remains private working memory with bounded retention unless explicitly promoted through safe rules.
+- Raw Telegram text remains bounded private working memory and is excluded from normal AI context.
 - AI receives only a small approved memory packet.
-- Personality changes are bounded, explainable and replay-safe.
+- Personality changes are gradual, bounded, explainable and replay-safe.
+- Export includes player-safe memory state and excludes private credentials/security internals.
+- Reset/deletion remove memory state according to account lifecycle rules.
 
-### Planned behavior
+## 7. Daily return and proactive notifications
 
-- More visible memory provenance.
-- Better explanation of which future scenes may use a memory.
-- Export and deletion integration.
+**Status: shipped**
 
-## 9. Daily return and proactive moments
+- At most one daily-return instance exists per creature/world/local date.
+- Completion/reward occurs once.
+- Notifications are off by default.
+- Timezone, delivery time and quiet hours are owner-controlled.
+- Messages are bounded and never guilt-based.
+- Late/no-longer-relevant moments are skipped.
+- Delivery does not own the reward.
+- Ambiguous Telegram delivery becomes `uncertain` and is not automatically replayed.
+
+## 8. Public sharing and referrals
+
+**Status: shipped**
+
+Public share surfaces:
+
+- use an opaque share token rather than an owner-derived slug;
+- expose only a fixed allowlist of public creature/story fields;
+- provide HTML preview, profile SVG, story SVG and text summary;
+- contain no scripts or remote assets where the shipped page promises self-containment;
+- do not expose Telegram user ID, private memories, credentials or raw canonical state;
+- return generic not-found behavior for invalid/old tokens.
+
+Referral behavior:
+
+- attribution binds to the durable referred player account;
+- one referred account yields at most one payout;
+- payout happens after onboarding completion;
+- reset/delete/recreation cannot generate another payout for the same durable account;
+- payout is transactional/idempotent.
+
+## 9. Shared-link creature encounters
 
 **Status: shipped foundation**
 
-### Expected behavior
+- A valid link can create a mutual encounter/relationship/story.
+- The same logical encounter cannot repeatedly grant XP or duplicate edges.
+- Both sides receive player-safe results.
+- Old creature links do not silently point at a replacement creature after reset.
 
-- At most one daily-return instance exists for a creature, world and local date.
-- The player receives a small meaningful choice.
-- Completion and reward are idempotent.
-- Scheduled notifications are off by default.
-- Timezone and quiet hours are owner-controlled.
-- The system sends bounded messages and never guilt-trips the player.
-- Notification delivery does not own the reward; opening or choosing through canonical endpoints does.
+## 10. Account export, reset and deletion
 
-### Failure behavior
+**Status: shipped**
 
-- Late or no-longer-relevant daily moments are skipped rather than spammed.
-- An ambiguous Telegram delivery becomes `uncertain` and is not automatically replayed.
+### Export
 
-## 10. Shared-link player encounters
+- `GET /api/account/export` returns deterministic JSON with explicit safe columns.
+- Export includes player-owned game state and connection metadata needed for understanding the account.
+- Export excludes plaintext/encrypted keys, bot tokens, webhook secrets, initData, raw OAuth verifier/state and security internals.
+- Response is downloadable and `no-store`.
 
-**Status: shipped foundation**
+### Creature reset
 
-### Expected behavior
+- Requires typed `RESET` confirmation.
+- Managed bots are revoked before canonical reset.
+- Creature-scoped progression is removed transactionally.
+- The Telegram player account remains.
+- Next launch creates a fresh creature.
+- New creature gets a new generation slug/share token.
+- Old share/referral links resolve to nothing rather than the replacement.
 
-- A share link contains an opaque/public creature slug, not a private player identifier.
-- Opening the link creates a mutual encounter only when both creatures are valid.
-- The same encounter link cannot repeatedly grant XP or duplicate relationship edges.
-- Both sides receive player-safe story results.
+### Account deletion
+
+- Requires typed `DELETE` confirmation.
+- Managed bots are revoked.
+- AI/OpenRouter credentials and player-owned data are removed.
+- Raw Telegram/update content tied to the deleted identity is removed where required.
+- retained security/operational history is anonymized according to policy.
+- repeated deletion is a no-op success and must not bootstrap/recreate the account.
+- no orphan active notifications/interactions/resources remain.
 
 ## 11. Personal managed bots
 
 **Status: staged**
 
-### Expected behavior
-
-- A player can create or attach a personal Telegram bot through the supported manager-bot flow.
-- The system retrieves the managed token server-side, encrypts it and configures a unique webhook.
-- The token is never returned to the browser or written to public logs.
-- The personal bot is bound to exactly one owning Telegram account and one creature.
+- A supported manager-bot flow attaches a managed bot to one owner and creature.
+- Managed token is retrieved server-side, encrypted and never returned.
+- Unique webhook secret is configured.
 - Owner private chat is allowed by default.
-- Other private users and groups require explicit allowlist rules.
-- Non-owner access is rejected without leaking creature state.
-- The owner can rotate the token and revoke the bot.
-- Revocation disables webhook access and future interactions.
-- A global fleet flag can stop the entire surface.
+- Other users/groups require explicit owner allowlist rules.
+- Unauthorized access is rejected without creature-state leakage.
+- Owner can rotate token and revoke bot.
+- Revoke disables webhook access and cancels active interactions.
+- Fleet kill switch stops the surface.
 
-### Player-facing completion requirement
-
-The staged backend is not a complete product feature until the managed-bot hub, consent controls and recovery UI described in issue #59 are available.
+The backend is not a finished broad-player feature until issue #59's management/consent UI exists.
 
 ## 12. Direct bot-to-bot meetings
 
-**Status: staged backend; planned player UX**
+**Status: staged backend; planned player UX (#58–#63)**
 
-### Expected behavior
-
-- Both owners explicitly enable bot meetings.
-- A normal player can create a direct invitation without admin credentials.
-- The invitation is short-lived, opaque and single-purpose.
-- The invited owner sees the public creature identity before accepting.
-- Each participant selects only a bot they own.
-- Acceptance does not silently enable permanent consent.
-- Starting rechecks ownership, bot state, consent, feature flags, budgets and expiry.
+- Both owners explicitly consent.
+- A normal player can create an opaque short-lived invitation without admin credentials.
+- Invited owner sees public creature identity before accepting.
+- Each side selects only a bot they own.
+- Acceptance does not silently enable global consent.
+- Start atomically rechecks invitation, ownership, bot health, consent, flags, budgets and expiry.
 - One accepted invitation creates at most one interaction.
-- Turns are signed, ordered, deduplicated and limited by TTL and maximum-turn budget.
-- Protocol envelopes are never shown in normal UI.
-- Both owners can follow progress and review a moderated transcript or summary.
+- Turns are signed, ordered, deduplicated and bounded by TTL/turn limit.
+- Protocol envelopes are hidden from normal UI.
+- Both owners see consistent progress and player-safe transcript/history.
 - Bot output cannot grant canonical rewards.
-
-### Failure behavior
-
-- Expired, altered, replayed or consumed invitations are rejected safely.
-- Consent changes before start block the meeting.
-- Delivery uncertainty produces a neutral support state, not a blind replay button.
-- Disabling the kill switch stops new meetings immediately.
+- Uncertain delivery shows neutral support state, not player replay.
+- Kill switch stops new meetings immediately.
 
 ## 13. Stranger matchmaking
 
-**Status: planned — issue #64**
+**Status: planned (#64)**
 
-### Expected behavior
-
-- Matchmaking is separately opt-in.
-- A player joins a short-lived queue for one encounter.
-- The server—not the player—selects a compatible stranger.
-- There is no public directory or arbitrary targeting of unknown users.
-- Matchmaking uses non-sensitive signals such as language, world compatibility, progression band, availability and repeat-pair cooldown.
+- Separately opt-in; joining is consent for one attempt.
+- Server selects compatible stranger; no public directory/arbitrary targeting.
+- Uses only non-sensitive signals such as language, world, progression band, availability and cooldown.
 - Owners remain pseudonymous.
-- No owner Telegram identity, phone number, private memory or social graph is exposed.
-- Two queue entries are claimed atomically and create exactly one interaction.
-- Either owner can block future rematches.
-- A separate report flow creates an opaque support reference.
-- A persistent creature relationship forms only after independent mutual opt-in.
-
-### Operational behavior
-
-- A dedicated feature flag defaults to off.
-- Cohort allowlists and suspension controls are available before wider rollout.
-- Queue expiry, cancellation and worker restart do not create duplicate matches.
+- No phone, owner Telegram identity, private memory, contacts or social graph is exposed.
+- Two queue entries are claimed atomically and create one match/interaction.
+- Cancelled/expired entries cannot match.
+- Match-time consent/flags/budgets/health/blocks are rechecked.
+- Either owner can block future matching or submit a bounded report.
+- Persistent creature relationship requires independent mutual opt-in.
+- Dedicated matchmaking flag defaults off.
 
 ## 14. Media reactions
 
-**Status: planned — issue #43**
+**Status: planned (#43)**
 
-### Expected behavior
-
-- Photos, voice notes, video and links enter a bounded media-processing pipeline.
-- The player receives a short in-character observation and curated follow-up choices.
-- Media is not permanently remembered by default.
-- Processing respects size, type, timeout, privacy and moderation limits.
-- External content cannot inject instructions into canonical game logic.
-- Failed processing returns a friendly fallback without blocking normal play.
+- Photos, voice notes, video and links enter a bounded typed pipeline.
+- Output is a short in-character observation plus curated choices.
+- Raw media is not permanent memory by default.
+- Size/type/timeout/privacy/moderation limits are enforced.
+- External content cannot inject canonical instructions.
+- Failure returns a friendly fallback and normal game remains available.
 
 ## 15. Optional AI and Connected Mind
 
 **Status: shipped foundation**
 
-### Expected behavior
-
-- The base game works without an AI connection.
+- Base game works without AI.
 - OpenRouter OAuth uses server-side PKCE and encrypted credentials.
-- The player selects only curated modes.
-- AI requests are budgeted, timed out and logged without secret values.
-- The prompt contains canonical facts, allowed references and a bounded approved memory packet.
-- Output is moderated and constrained before display.
-- AI failure uses deterministic authored fallback.
+- Player selects curated modes.
+- Calls are budgeted, timed out and logged without secrets.
+- Prompt contains canonical facts, allowed references and bounded memory.
+- Output is validated/moderated.
+- Failure uses deterministic fallback.
 
-### Hard boundary
-
-Model output cannot directly:
-
-- insert or update canonical game rows;
-- grant XP, stars, items or quest completion;
-- choose another player or matchmaking result;
-- bypass consent or access rules;
-- call Telegram independently of the durable outbox.
+Model output cannot directly mutate canonical rows, grant rewards, choose players/matches, bypass consent or call Telegram outside the outbox.
 
 ## 16. World Packs
 
-**Status: planned — issue #15**
+**Status: planned (#15)**
 
-### Expected behavior
+- Packs declare validated content/rules, not arbitrary executable code.
+- World state is namespaced.
+- Switching worlds cannot corrupt another world.
+- Invalid packs fail before activation.
+- Every required scene has deterministic fallback.
+- Packs cannot write SQL/call external services/bypass canonical APIs.
 
-- A World Pack declares content and rules through validated data rather than arbitrary runtime code.
-- World-specific scenes, quests, locations, items and relationships remain namespaced.
-- The same player and managed-bot identity may participate in multiple worlds.
-- Switching worlds cannot corrupt another world's progress.
-- A malformed World Pack fails validation before activation.
-- Deterministic fallback content exists for every required scene.
+## 17. Errors and outages
 
-## 17. Notifications
+Player-facing errors are short, actionable, typed and free of stack traces, SQL, Zod internals and secrets.
 
-### Expected behavior
+Degraded mode:
 
-- Notification categories are explicit and owner-controlled.
-- Delivery time and quiet hours are respected.
-- Source keys prevent duplicate scheduled notifications.
-- Turn-by-turn bot-meeting spam is prohibited.
-- Notifications deep-link to a real relevant screen.
-- Opt-out is immediate for future schedules.
+- preserves safe reads where possible;
+- clearly rejects risky writes;
+- discourages retry spam;
+- remains inspectable through readiness/metrics.
 
-## 18. Error and outage behavior
+Delivery:
 
-### Player-facing errors
-
-Errors should be:
-
-- short;
-- specific enough to suggest a next action;
-- free of stack traces, SQL, Zod internals and secret values;
-- associated with a stable typed error code for support.
-
-### Degraded mode
-
-When risky writes are disabled:
-
-- safe reads remain available where possible;
-- the UI clearly says the world is temporarily read-only;
-- no client is encouraged to spam retries;
-- operators can inspect readiness and queue state.
-
-### Telegram delivery states
-
-- retryable known failures may retry with bounded backoff;
+- known transient failures retry with bounds;
 - permanent failures dead-letter;
 - ambiguous delivery becomes uncertain;
-- uncertain delivery is never automatically replayed;
-- operator replay is explicit and audited.
+- uncertain is never automatic replay;
+- operator replay is explicit/audited.
 
-## 19. Privacy, deletion and export
+## 18. Accessibility and localization
 
-**Status: partial foundation; planned self-service UI**
-
-### Expected behavior
-
-- Players can understand what data is stored.
-- Export excludes secrets, encrypted credentials and security internals.
-- Reset and deletion require explicit confirmation.
-- Managed bots are revoked or detached safely before account deletion.
-- AI credentials are deleted.
-- Creature-scoped data is removed transactionally or anonymized according to policy.
-- Deletion does not leave orphaned active interactions or scheduled notifications.
-
-## 20. Accessibility and localization
-
-### Expected behavior
-
-- Core flows work on narrow Telegram Mini App screens.
-- Interactive elements have accessible names and keyboard behavior.
-- Status changes are announced semantically.
-- Reduced motion is respected.
+- Core flows fit narrow Telegram viewports.
+- Controls have accessible names/keyboard behavior.
+- Status changes are semantically announced.
+- Reduced motion and readable contrast are supported.
 - Color is not the only signal.
-- Copy is short and structured for translation.
-- Dates and times use the player's locale/timezone where relevant.
-- RTL languages can be supported without restructuring the product.
+- Copy is concise/translation-friendly.
+- Times use player locale/timezone.
+- RTL can be supported without redesigning data contracts.
 
-## 21. Performance expectations
+## 19. Performance and operations
 
 - Webhooks validate, persist and return quickly.
-- Network calls do not run inside long database transactions.
+- Network calls stay outside long transactions.
 - Worker batches are bounded and non-overlapping.
-- Dashboard reads remain responsive at alpha scale.
-- AI timeouts are shorter than the patience threshold for a normal action and always have fallback.
-- Queue backlogs affect readiness before they become silent data loss.
+- AI has strict timeout/fallback.
+- Queue pressure affects readiness before silent loss.
+- Release preflight verifies version, flags, queues and migration ledger.
+- Backup/restore drill validates recoverability.
+- Risky features have kill switches.
 
-## 22. Observability
+Operators can inspect update/outbox states, worker lag, AI usage, security/operational events, bot interactions, migration ledger and account-lifecycle events without raw secrets/private content.
 
-Operators must be able to inspect:
+## Definition of done
 
-- update counts by lifecycle state;
-- outbox counts by lifecycle state;
-- worker lag and queue age;
-- AI use, fallback and latency;
-- security events;
-- bot interactions and matchmaking states;
-- operational control changes;
-- privacy-safe product funnels.
+A player-facing feature is done only when:
 
-Metrics must not contain raw private messages, tokens, initData, API keys or full media contents.
-
-## Definition of done for a player-facing feature
-
-A feature is done only when:
-
-1. the player journey is documented;
-2. ownership and authorization are explicit;
-3. canonical mutations are transactional and idempotent;
-4. secrets and private fields are excluded from responses;
-5. expected, empty, loading, disabled and failure states exist;
-6. unit and integration tests pass;
-7. a database smoke test covers the critical state transition when applicable;
-8. operations have a flag, metric and rollback path for risky behavior;
-9. the relevant player and developer docs are updated;
-10. production verification evidence is recorded for Telegram-dependent behavior.
+1. journey and status (shipped/staged/planned) are documented;
+2. ownership/authorization are explicit;
+3. mutations are transactional/idempotent;
+4. secrets/private fields are excluded;
+5. loading/empty/disabled/success/failure states exist;
+6. unit/integration/DB smoke tests pass as relevant;
+7. replay/concurrency/negative authorization are tested;
+8. flag, metric and rollback exist for risky behavior;
+9. player, developer, API and operations docs are updated;
+10. real Telegram production evidence exists for Telegram-dependent behavior.

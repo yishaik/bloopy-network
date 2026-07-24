@@ -6,16 +6,17 @@ Bloopy Network is a proactive Telegram-native creature game in which every playe
 
 ## Mission
 
-Create a creature that feels alive across days and months without pretending to be a human, demanding constant attention or depending on expensive AI inference.
+Create a creature that feels alive across days and months without pretending to be human, demanding constant attention or depending on expensive AI inference.
 
-Bloopy should turn Telegram into part of the game world:
+Telegram is part of the game world:
 
 - the manager bot introduces and launches the experience;
 - the Mini App shows the persistent world and controls;
 - optional notifications deliver meaningful moments;
-- a personal managed bot gives the creature its own Telegram identity;
+- public cards let players share a safe creature/story view;
+- a personal managed bot can give the creature its own Telegram identity;
 - creatures can meet through bounded server-mediated conversations;
-- future matchmaking allows safe pseudonymous encounters between strangers.
+- future matchmaking can create safe pseudonymous encounters between strangers.
 
 ## Product promise
 
@@ -23,12 +24,13 @@ The player should be able to say:
 
 > “This is my creature. It remembers our story, changes slowly, surprises me and sometimes comes back with stories from other creatures.”
 
-The promise depends on four qualities:
+That promise depends on:
 
 1. **Continuity** — state, identity and relationships persist.
 2. **Agency** — choices produce understandable canonical consequences.
 3. **Surprise** — authored and optional AI-enhanced moments remain varied.
 4. **Safety** — social, delivery and AI behavior stay bounded and owner-controlled.
+5. **Control** — players can understand, export, reset or delete their data.
 
 ## What Bloopy is not
 
@@ -50,19 +52,19 @@ Onboarding is Character Genesis. The player makes story choices and names a crea
 
 ### The world is populated from the first session
 
-Recurring characters, locations, quests and mysteries exist immediately. The player is not dropped into an empty chat box.
+Recurring characters, locations, quests and mysteries exist immediately.
 
 ### Canonical gameplay is deterministic
 
 The game engine owns:
 
-- legal choices;
-- prerequisites;
+- legal choices and prerequisites;
 - energy costs;
 - XP, stars and items;
 - quests and relationships;
 - story routes and flags;
 - memory/personality mutations;
+- referral eligibility and payout;
 - social and interaction lifecycle state.
 
 Optional AI may improve narration but cannot become game authority.
@@ -75,12 +77,16 @@ Visual evolution is based on a versioned genome. Growth adds detail while preser
 
 The creature may initiate stories, requests or notifications, but must not use guilt, fake emergencies, streak threats or escalating spam.
 
+### Sharing is public-safe by construction
+
+Public share cards use an opaque token and a fixed allowlist of non-private creature fields. They do not expose owner Telegram IDs, credentials, private memories or internal game state.
+
 ### Social play is layered and consent-based
 
 Social features progress from lower-risk to higher-risk:
 
 1. NPC relationships;
-2. shared-link creature encounters;
+2. shared-link creature encounters/referrals;
 3. direct managed-bot meetings between known players;
 4. pseudonymous stranger matchmaking;
 5. future networks, groups and collaborative adventures.
@@ -93,15 +99,7 @@ Authored deterministic content is always available. Connected Mind and compatibl
 
 ### Low cost is a product constraint
 
-The system should remain sustainable through:
-
-- a modular monolith;
-- PostgreSQL;
-- bounded workers;
-- authored content;
-- optional user-funded inference;
-- strict AI budgets and sampling;
-- deterministic fallback.
+The system remains sustainable through a modular monolith, PostgreSQL, bounded workers, authored content, optional user-funded inference, strict budgets and deterministic fallback.
 
 ## Player experience
 
@@ -136,9 +134,7 @@ Over weeks and months, the creature should accumulate:
 - encounter history with other creatures;
 - progress across one or more World Packs.
 
-## Current shipped foundation
-
-The current vertical slice includes:
+## Current shipped foundation — release 0.12
 
 - Character Genesis;
 - persistent creature identity and genome avatar;
@@ -151,10 +147,16 @@ The current vertical slice includes:
 - memory view/correction/deletion;
 - daily-return moments and opt-in notifications;
 - shared-link player encounters;
+- opaque public profile/story cards and text fallback;
+- one-time referral attribution and payout;
+- self-service JSON export;
+- typed-confirmation creature reset;
+- typed-confirmation account deletion and credential cleanup;
 - encrypted OpenRouter OAuth and compatible BYOK narration;
 - durable Telegram ingress/outbox reliability;
 - managed-bot ownership/control-plane foundation;
-- bounded signed bot-interaction engine.
+- bounded signed bot-interaction engine;
+- release preflight, backup and verified restore tooling.
 
 ## Staged capabilities
 
@@ -165,7 +167,7 @@ Implemented but gated by production verification:
 - token rotation and revoke;
 - two-owner bot-to-bot interactions.
 
-A backend implementation is not considered a finished product flow until normal players can manage consent, invite, accept, follow and review meetings without admin APIs.
+A backend implementation is not a finished product flow until normal players can manage consent, invite, accept, follow and review meetings without admin APIs.
 
 ## Planned product layers
 
@@ -182,19 +184,27 @@ Issues #58–#63 define:
 
 ### Stranger matchmaking
 
-Issue #64 defines a separate opt-in queue where the server pairs compatible creatures without exposing the owners' private Telegram identities.
+Issue #64 defines a separate opt-in queue where the server pairs compatible creatures without exposing owners' private Telegram identities.
 
 ### Media reactions
 
 Issue #43 defines bounded reactions to photos, voice notes, video and links after the relevant delivery/privacy gates are verified.
 
-### Data controls
-
-Issue #56 defines self-service export, creature reset and account deletion.
-
 ### World Packs
 
 Issue #15 defines a reusable validated content architecture for multiple narrative worlds without arbitrary content code writing canonical state.
+
+## Data-control behavior
+
+Players can currently:
+
+- export an explicitly allowlisted JSON representation of their account/game state;
+- reset creature progression while keeping the Telegram player account;
+- delete the account and stored AI credentials;
+- revoke managed bots as part of reset/deletion;
+- rely on new creature generation/share identities after reset so old links do not silently target a replacement.
+
+Exports never include bot tokens, API keys, webhook secrets, raw OAuth verifier/state, Telegram initData or security internals.
 
 ## Final product behavior
 
@@ -206,12 +216,12 @@ When mature, Bloopy should provide:
 - a consistent evolving avatar;
 - editable memories and gradual personality growth;
 - optional proactive messages with quiet hours;
+- safe share cards and referrals;
 - personal creature bots under owner control;
 - direct invitations between known creatures;
 - safe stranger matchmaking with blocks/reports;
 - bounded media reactions;
 - optional constrained AI narration;
-- shareable public-safe summaries/cards;
 - export, reset and deletion controls;
 - instant operational kill switches for risky surfaces;
 - deterministic gameplay that remains available when every AI provider is offline.
@@ -220,29 +230,23 @@ The normative end-state contract is in [Behavior specification](./BEHAVIOR_SPEC.
 
 ## Success metrics
 
-Prefer metrics that reflect voluntary attachment and healthy operation:
+Prefer metrics reflecting voluntary attachment and healthy operation:
 
 - onboarding completion;
 - D1/D7 meaningful return;
 - story-arc completion;
 - memory control use;
 - quest and relationship progression;
+- share-card use and valid referral conversion;
+- successful export/reset/deletion;
 - opt-in notification open without opt-out spikes;
 - successful shared/direct/matched encounters;
 - mutual “remember this creature” rate;
 - low duplicate-effect and delivery-failure rates;
 - deterministic fallback success;
-- block/report rates and response time;
-- data export/deletion completion.
+- block/report rates and response time.
 
-Do not optimize primarily for:
-
-- notification sends;
-- raw time spent;
-- compulsive rapid tapping;
-- number of AI calls;
-- streak anxiety;
-- unbounded message volume.
+Do not optimize primarily for notification sends, raw time spent, compulsive rapid tapping, number of AI calls, streak anxiety or unbounded message volume.
 
 ## Documentation map
 

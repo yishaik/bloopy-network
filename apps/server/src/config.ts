@@ -35,7 +35,17 @@ const schema = z.object({
   AI_PLATFORM_ENRICHMENT_PERCENT: z.coerce.number().int().min(0).max(100).default(30),
   AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(15000).default(4500),
   AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(60).max(400).default(160),
-  PROACTIVE_DELAY_SECONDS: z.coerce.number().int().positive().default(7200)
+  PROACTIVE_DELAY_SECONDS: z.coerce.number().int().positive().default(7200),
+  TELEGRAM_INGRESS_ENABLED: booleanFromString.default("true"),
+  MANAGED_BOT_FLEET_ENABLED: booleanFromString.default("true"),
+  BOT_TO_BOT_ENABLED: booleanFromString.default("true"),
+  OUTBOX_ENABLED: booleanFromString.default("true"),
+  DEGRADED_MODE: booleanFromString.default("false"),
+  BOT_INTERACTION_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
+  BOT_INTERACTION_MAX_TURNS: z.coerce.number().int().min(2).max(8).default(4),
+  BOT_INTERACTION_PAIR_HOURLY_LIMIT: z.coerce.number().int().min(1).max(100).default(5),
+  BOT_INTERACTION_OWNER_DAILY_LIMIT: z.coerce.number().int().min(1).max(500).default(20),
+  PROCESSED_UPDATE_RETENTION_DAYS: z.coerce.number().int().min(1).max(90).default(7)
 }).superRefine((value, ctx) => {
   if (INSECURE_ENCRYPTION_KEYS.has(value.APP_ENCRYPTION_KEY)) ctx.addIssue({ code: "custom", path: ["APP_ENCRYPTION_KEY"], message: "APP_ENCRYPTION_KEY is the public all-zero development key; generate a real one with: openssl rand -base64 32" });
   if (value.NODE_ENV === "production") {

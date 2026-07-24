@@ -2,478 +2,392 @@
 
 ## Executive summary
 
-Bloopy Network is a modular monolith: one deployable Node.js service with strict domain boundaries, PostgreSQL persistence, Telegram webhooks, a static Mini App and background workers.
+Bloopy Network is a TypeScript modular monolith: one deployable Node.js service with strict domain boundaries, PostgreSQL persistence, Telegram webhooks, a static Mini App, public share rendering, background workers, account-lifecycle controls and optional constrained AI narration.
 
-This shape is deliberate. It minimizes cost and operational complexity while preserving clear seams for future extraction.
+The central rule is:
 
-The most important architectural rule is:
-
-> Canonical game state is decided transactionally by deterministic domain code. External Telegram and AI systems may deliver or render results, but they never own the rules.
+> Canonical game state is decided transactionally by deterministic domain code. Telegram, public rendering and AI may deliver or present results, but they do not own the rules.
 
 ## System context
 
 ```text
 Telegram user
-   │
-   ├── Manager bot ───────────────┐
-   ├── Managed creature bot      │
-   └── Telegram Mini App         │
-                                  ▼
-                         Fastify application
-                    ┌─────────────┼─────────────┐
-                    │             │             │
-               HTTP/API      Telegram ingress  Static Mini App
-                    │             │
-                    └──────┬──────┘
-                           ▼
-                     Domain modules
-          game / stories / memory / bots / AI policy
-                           │
-                           ▼
-                       PostgreSQL
-        canonical state / queues / events / credentials
-                           │
-                    background worker loop
-                    ┌──────┴────────┐
-                    ▼               ▼
-             Telegram outbox   scheduled world work
-                    │
-                    ▼
-             Telegram Bot API
+   ├── manager bot
+   ├── managed creature bot (staged)
+   └── Mini App
+              │
+              ▼
+       Fastify application
+  ┌───────────┼───────────────┬─────────────────┐
+  │           │               │                 │
+player API  webhooks     public share pages  admin/verification
+  │           │               │                 │
+  └───────────┴───────┬───────┴─────────────────┘
+                      ▼
+               domain modules
+ game / stories / memory / sharing / account / bots / AI policy
+                      │
+                      ▼
+                  PostgreSQL
+ canonical state / credentials / queues / audit / migration ledger
+                      │
+               background worker
+              ┌───────┴─────────┐
+              ▼                 ▼
+      leased Telegram      scheduled world/
+      ingress + outbox     notification work
+              │
+              ▼
+       Telegram Bot API
 
-Optional narration path:
 canonical facts → AI policy/budget → provider → validation/moderation
-                         │
-                         └→ deterministic fallback on any failure
+       └──────────────── deterministic fallback on any failure
 ```
 
 ## Deployment model
 
 One service currently provides:
 
-- public HTTP routes;
-- Telegram webhook endpoints;
-- static Mini App assets;
+- authenticated player APIs;
+- Telegram manager/managed-bot webhooks;
+- Mini App static assets;
+- public share HTML/SVG/text surfaces;
 - background ingress/outbox/event workers;
-- migration execution at startup/deploy workflow;
-- health/readiness endpoints;
-- operational admin endpoints.
+- account export/reset/delete;
+- migrations and migration-ledger checks;
+- liveness/readiness/version health;
+- operational and verification endpoints.
 
-PostgreSQL is the durable source of truth.
+PostgreSQL is the durable source of truth. A process restart must preserve state and recover leased asynchronous work.
 
-This is not an in-memory bot process. A restart must preserve player state and recover claimed asynchronous work through leases.
+## Module boundaries
 
-## Repository/runtime modules
+### HTTP composition
 
-## HTTP composition — `server.ts`
+`server.ts` should remain composition code:
 
-Responsibilities:
+- Fastify setup;
+- request validation/authentication;
+- route wiring;
+- degraded-mode gate;
+- health/admin routes;
+- worker scheduling;
+- global typed error handling.
 
-- Fastify configuration;
-- request validation and authentication composition;
-- route definitions;
-- degraded-mode write gate;
-- health/readiness routes;
-- admin route protection;
-- background worker scheduling;
-- global player-safe error handling.
+Domain logic belongs in focused modules.
 
-Domain logic should be delegated to modules rather than accumulating in routes.
+### Configuration
 
-## Configuration — `config.ts`
+`config.ts` parses environment variables, sets bounds/defaults and rejects insecure production configuration such as HTTP public URLs, demo/local-AI production mode, missing/weak admin keys, missing Telegram prerequisites or incompatible risky flags.
 
-Responsibilities:
+### Game domain
 
-- parse environment variables with Zod;
-- define defaults and bounds;
-- reject insecure production configuration;
-- expose feature flags, budgets, TTLs and queue settings.
+Owns:
 
-Production guards reject demo mode and placeholder secrets.
-
-## Database — `db.ts` and migrations
-
-PostgreSQL stores:
-
-- players and creatures;
-- onboarding and progression;
-- quests, inventory and relationships;
-- story entries and arc state;
-- memories/personality history;
-- notification preferences/daily returns;
-- AI profiles/OAuth state/usage logs;
-- managed bots, access rules and security events;
-- bot interactions and turns;
-- Telegram ingress and outbox queues;
-- runtime controls and operational events.
-
-Migrations are additive and immutable after application.
-
-## Game domain — `game.ts`
-
-Owns canonical player/creature behavior including:
-
-- bootstrap;
-- onboarding;
-- actions;
-- energy and progression;
+- player/creature bootstrap;
+- Character Genesis;
+- actions, energy and progression;
 - shop/inventory;
-- quests and relationships;
-- shared-link encounters.
+- quests/relationships;
+- shared-link encounters and canonical referral rewards.
 
-The module should expose domain-shaped results, not raw SQL rows.
+### Story engine
 
-## Story engine — `door-game.ts` and story definitions
+Validated arc definitions own activation, beats, legal choices, canonical effects, route inheritance and deterministic fallback. Optional AI only enriches presentation after the canonical result exists.
 
-The story layer separates:
+### Memory and notifications
 
-- arc definitions;
-- activation prerequisites;
-- current beat/legal choices;
-- deterministic canonical effects;
-- optional presentation enrichment.
+Memory modules own editable memories, lineage, personality and daily-return state. Notification modules own timezone/quiet hours and unique scheduling intent. They enqueue delivery rather than call Telegram directly.
 
-The same generic arc engine supports The Impossible Door and The Letter From Tomorrow.
+### Public sharing
 
-World Packs should extend validated content definitions rather than execute arbitrary code against canonical tables.
+Public share behavior uses a dedicated player-safe view, not raw domain rows.
 
-## Memory and daily return — `memory.ts`
+Current surfaces:
 
-Owns:
+- `/share/c/:token`;
+- profile/story SVG cards;
+- text summary fallback.
 
-- memory listing/correction/deletion;
-- lineage and soft deletion;
-- approved AI memory packet;
-- personality change records;
-- daily-return choice and reward.
+Architecture rules:
 
-Raw Telegram text remains bounded private working memory and is excluded from normal AI context by policy/database rules.
+- opaque random share token;
+- explicit public field allowlist;
+- no scripts/remote assets where the route promises a self-contained page;
+- safe text/SVG escaping;
+- generic not-found;
+- new generation token/slug after creature reset;
+- no private owner identifier in the token or response.
 
-## Notifications — `notifications.ts`
+Referral attribution is persisted separately from rendering and bound to the durable referred player account, making payout one-time across creature resets.
 
-Owns:
+### Account lifecycle
 
-- timezone-aware local date/time;
-- quiet hours;
-- opt-in preferences;
-- due daily-return scheduling;
-- unique notification source keys;
-- opened/sent state.
+Account lifecycle owns:
 
-Scheduling creates outbox intent; it does not call Telegram directly.
+- explicit-column JSON export;
+- managed-bot revoke coordination;
+- creature reset;
+- account deletion;
+- cleanup of FK and non-FK identity-bearing records;
+- anonymized lifecycle/security audit where retention is required;
+- fresh bootstrap after reset;
+- idempotent repeated deletion without accidental account recreation.
 
-## Telegram protocol — `telegram.ts`
+External bot revocation happens before deleting registry authorization. Canonical reset/delete then occurs transactionally.
 
-Owns:
+### Telegram protocol and control plane
 
-- manager-bot behavior;
-- managed-bot registration/configuration;
-- Telegram message-to-domain translation;
-- managed-bot human authorization invocation;
-- bot-originated turn handling;
-- token rotation and revoke orchestration;
-- enqueueing replies.
+Telegram modules own manager/managed-bot translation, bot registration/configuration, owner/chat authorization, token rotation/revoke and signed interaction turns.
 
-Telegram API calls occur in delivery/configuration paths, not inside canonical game transactions.
+Managed-bot tokens remain encrypted. Owner-private access is default; other users/groups require explicit allowlist rules.
 
-## Telegram control plane — `telegram-control.ts`
+### Delivery runtime
 
-Owns:
-
-- managed-bot registry views;
-- owner and approved-chat authorization;
-- consent state;
-- token rotation/revoke canonical records;
-- bot-interaction creation;
-- signed turn protocol;
-- TTL/turn/budget enforcement;
-- replay/forgery rejection;
-- security events.
-
-## Delivery runtime — `delivery-runtime.ts`
-
-Owns two durable asynchronous state machines.
-
-### Telegram ingress
+#### Ingress
 
 ```text
 received → processing → completed
-              │
               ├→ retryable → processing
               └→ failed
 ```
 
-Behavior:
+Webhook secret is validated, full update persisted and response returned quickly. A worker claims with a short lease. Command keys protect canonical effects from replay. Expired processing leases become retryable.
 
-- webhook validates secret;
-- full update is persisted;
-- response returns quickly;
-- worker claims with lease;
-- domain handler runs;
-- result is finalized;
-- expired processing lease becomes retryable.
-
-Canonical command keys provide a second layer of replay protection.
-
-### Telegram outbox
+#### Outbox
 
 ```text
 pending → sending → sent
-             │
              ├→ retryable → sending
              ├→ dead_letter
              └→ uncertain
 ```
 
-Behavior:
+Claim/finalize transactions are short; Telegram calls occur between them.
 
-- rows are claimed in a short transaction;
-- Telegram network call occurs outside the transaction;
-- outcome is finalized in a second transaction;
-- `429`/known transient errors retry with bounds;
-- permanent errors dead-letter;
-- ambiguous timeout/network failure becomes uncertain;
-- expired sending lease becomes uncertain;
-- uncertain rows require explicit operator judgment.
+- `429` honors retry-after;
+- known transient `5xx` retries with bounds;
+- permanent `4xx` dead-letters;
+- ambiguous timeout/network result becomes uncertain;
+- expired sending lease becomes uncertain.
 
-## Worker — `worker.ts` plus server scheduler
+Uncertain delivery is never automatically replayed.
 
-The worker loop processes:
+### Worker
+
+The bounded non-overlapping worker loop performs:
 
 - expired lease recovery;
-- Telegram ingress batches;
+- Telegram ingress processing;
 - notification scheduling;
 - due world events;
-- cleanup at a bounded interval;
-- outbox delivery batches.
+- periodic cleanup;
+- outbox delivery.
 
-Ticks do not overlap. Batch sizes and lease durations are configurable.
+At larger scale these can become separate processes while preserving the same PostgreSQL queues and idempotency contracts.
 
-For higher scale, workers can later become separate processes while preserving the same PostgreSQL queues and module contracts.
+### AI and OpenRouter
 
-## AI narration — `ai.ts`, `ai-policy.ts`, `openrouter.ts`
+AI has four boundaries:
 
-AI architecture has four boundaries:
-
-1. canonical facts are decided before inference;
-2. provider access is validated, encrypted and budgeted;
-3. prompt context is bounded and approved;
+1. canonical facts exist before inference;
+2. credentials/provider access are encrypted, validated, SSRF-protected and budgeted;
+3. prompt context is approved and bounded;
 4. output is validated/moderated with deterministic fallback.
 
-Connected Mind uses OpenRouter OAuth with PKCE and encrypted credentials. Compatible BYOK profiles remain constrained by SSRF protection, timeouts and curated models/modes.
+AI cannot select rewards, mutate canonical state, choose another player or call Telegram directly.
 
-AI logs metadata such as provider, latency, usage and fallback reason without returning or logging credentials.
+### Avatar/card rendering
 
-## Avatar renderer — `avatar.ts`
+The versioned genome deterministically renders SVG, preserving identity and keeping cost low. Public cards inline only safe visual/text data. Future generative assets must preserve genome identity.
 
-The renderer converts a versioned genome into SVG.
+## Authentication
 
-Advantages:
+### Mini App
 
-- stable identity;
-- low cost;
-- fast rendering;
-- deterministic tests;
-- controlled evolution details;
-- no dependence on image-generation availability.
+Telegram initData is validated server-side. Managed-bot launches may require validating with the relevant managed-bot token.
 
-If generative assets are added later, the genome remains the canonical identity anchor.
+### Webhooks
 
-## Authentication model
+Manager and managed webhooks use Telegram secret-token headers. Legacy path-secret routes should not be used for new integrations.
 
-## Mini App
+### Admin
 
-Telegram initData is validated server-side. Because the Mini App may be opened from either the manager bot or a managed bot, token selection must be bot-aware.
+`ADMIN_API_KEY` protects operational, verification and manual-replay endpoints with constant-time comparison.
 
-## Manager webhook
+Admin APIs are not product APIs.
 
-Protected by Telegram's secret-token header and the configured manager webhook secret.
+## Ownership
 
-## Managed-bot webhook
+Private resources are owner-scoped server-side:
 
-Protected by a per-bot secret-token header. The bot must be active and not revoked.
+- managed bots;
+- memories;
+- account export/reset/delete;
+- meeting invitations/history;
+- future matchmaking queue entries;
+- AI credentials.
 
-## Admin routes
-
-Protected by `ADMIN_API_KEY` using constant-time secret comparison.
-
-Admin endpoints are operational tools and must not be required for normal player flows.
-
-## Ownership model
-
-Private resources are always owner-scoped on the server.
-
-Examples:
-
-- managed bots belong to one Telegram owner and creature;
-- memory edits require the creature owner;
-- meeting invitations bind both participants server-side;
-- future matchmaking queue entries bind the authenticated owner's bot;
-- meeting history is visible only to participating owners.
-
-A client-supplied owner ID is never authoritative.
+Client-supplied owner IDs are never authoritative.
 
 ## Canonical mutation pattern
 
 ```text
-validate input
-  → authenticate/derive owner
-  → load + lock state
-  → validate prerequisites
-  → claim idempotency key
-  → apply canonical effects
-  → record canonical event/analytics
-  → commit
-  → optional external narration/delivery
-  → persist permitted presentation/operational result
+validate
+ → authenticate and derive owner
+ → load/lock state
+ → verify prerequisites
+ → claim idempotency
+ → apply canonical effects
+ → record related audit/analytics
+ → commit
+ → optional external narration/delivery
+ → finalize permitted presentation/operational state
 ```
 
-External failure must not undo an already committed canonical action unless the external result is itself the canonical prerequisite.
+External failure must not undo committed canonical state unless the external result is itself the required canonical prerequisite.
 
-## Error model
+## Data model categories
 
-Expected failures use typed `AppError` values with:
+PostgreSQL stores:
 
-- stable code;
-- HTTP status;
-- player-safe message.
+- players, creatures and onboarding;
+- progression, inventory, quests and relationships;
+- story/arc state;
+- memories/personality/daily returns;
+- notifications;
+- share tokens and referral attribution;
+- AI profiles/OAuth/usage logs;
+- managed bots/access/security events;
+- bot interactions/turns;
+- Telegram updates/outbox;
+- runtime controls/operational events;
+- account lifecycle audit;
+- migration ledger.
 
-Unexpected errors are logged and returned as a generic internal response.
+Migrations are additive and immutable once applied.
 
-The global handler must not expose:
+## Errors
 
-- stack traces;
-- SQL errors;
-- Zod internals;
-- credentials;
-- provider response bodies containing secrets.
+Expected domain failures use `AppError` with stable code, HTTP status and player-safe message. Unexpected errors are logged safely and returned generically.
 
-## Readiness and degraded mode
+Never expose stack traces, SQL/Zod internals, provider secret bodies or private ownership information.
+
+## Readiness and release verification
 
 Endpoints:
 
 - `/livez` — process liveness;
-- `/readyz` — database, migration, queue and runtime readiness;
-- `/health` — database check and release version.
+- `/readyz` — database, complete migration ledger, queue thresholds and runtime readiness;
+- `/health` — database check and package release version.
 
-Runtime controls can pause:
+Release 0.12 reads the version from package metadata rather than a duplicated hardcoded value.
 
-- Telegram ingress;
-- outbox delivery;
-- risky mutations.
+`npm run release:check` verifies:
 
-Safe read-only mode preserves player reads where possible while blocking writes.
+- expected version;
+- migration ledger versus checkout;
+- phase-appropriate flags;
+- queue health;
+- liveness/readiness/health;
+- required checks are not silently skipped.
+
+`npm run verify:gate` supports non-secret human-verification probes.
+
+## Backup and restore
+
+Backup/restore tooling is part of architecture, not an external assumption.
+
+The verified restore drill checks:
+
+- PostgreSQL version compatibility;
+- migration ledger;
+- core tables;
+- seeded world;
+- migration rerun no-op;
+- refusal to target production for destructive verification.
+
+See [`BACKUP_RESTORE.md`](./BACKUP_RESTORE.md).
+
+## Degraded mode and runtime controls
+
+Runtime controls can pause Telegram ingress, outbox delivery and risky mutations. Read-only mode preserves safe reads where possible.
+
+Boot-time flags separately control managed bots and bot-to-bot. Planned matchmaking receives its own flag.
 
 ## Observability
 
-Admin metrics include:
+Admin metrics expose privacy-safe counts for:
 
-- update/outbox state counts;
+- update/outbox lifecycle;
 - worker lag;
 - AI use/fallback;
-- analytics events;
-- security events;
-- bot-interaction states;
-- operational control events.
+- analytics/security/operational events;
+- bot interactions;
+- migration ledger;
+- account lifecycle events;
+- runtime flags.
 
-Planned additions:
+Planned additions include invitation, player-safe meeting, matchmaking and media lifecycle metrics.
 
-- invitation state funnel;
-- meeting player-safe lifecycle metrics;
-- matchmaking queue/match/safety metrics;
-- media-processing lifecycle metrics.
+Metrics do not contain credentials or raw private content.
 
-Metrics use categories and opaque IDs, not raw private content.
+## Social architecture
 
-## Current social architecture
+### Shared links
 
-### Shared-link encounters
+Opaque public cards and Telegram deep links create idempotent encounters/referrals.
 
-A public creature slug in a Telegram deep link creates an idempotent mutual encounter and relationship/story effects.
+### Managed-bot meetings
 
-### Managed-bot interactions
-
-The existing backend can create a persisted interaction and exchange signed bounded turns through two managed bots.
-
-The normal-player product layer is still planned:
-
-- direct invitation persistence and UI;
-- player-scoped meeting lifecycle API;
-- progress/transcript/history;
-- notifications and recovery states.
+The backend has ownership, consent and signed bounded turns. Player product work (#58–#63) adds invitation, lifecycle, transcript/history and recovery UI.
 
 ### Stranger matchmaking
 
-Planned as a separate server-selected queue:
+Planned flow:
 
 ```text
-owner opts in for one encounter
-  → queue entry
-  → atomic compatible pair claim
-  → match record
-  → one bot interaction
-  → completion
-  → optional mutual remember / block / report
+owner opts into one search
+ → queue entry
+ → atomic compatible pair claim
+ → match record
+ → one bot interaction
+ → completion
+ → mutual remember / block / report
 ```
 
 No public directory is part of the design.
 
-## Future World Pack architecture
+## Future World Packs
 
-The target system separates engine from validated content.
+A pack declares validated metadata, locations, characters, scenes, choices, quests, rewards, relationships, fallback narration and visual tokens.
 
-A World Pack should declare:
-
-- metadata and compatibility version;
-- locations;
-- characters;
-- scenes and legal choices;
-- quests and rewards;
-- items and relationships;
-- progression prerequisites;
-- deterministic fallback narration;
-- visual theme tokens.
-
-It must not:
-
-- execute arbitrary JavaScript;
-- write SQL;
-- bypass canonical APIs;
-- call external services directly;
-- access another world's private state.
+It cannot execute arbitrary JavaScript, write SQL, bypass canonical APIs, call external services directly or access another world's private state.
 
 ## Scaling seams
 
-The modular monolith may be separated when load justifies it.
+Potential extraction points:
 
-Natural extraction candidates:
-
-- Telegram ingress worker;
-- outbox delivery worker;
-- media processing worker;
-- narrative/AI worker;
+- ingress worker;
+- outbox worker;
+- media worker;
+- AI/narrative worker;
 - matchmaking worker;
-- static asset/avatar service.
+- public rendering/avatar service.
 
-Extraction should preserve:
+Extraction must preserve PostgreSQL-backed claims, command keys, domain APIs, error contracts, flags and observability. Do not distribute before measured need.
 
-- PostgreSQL-backed durable claims;
-- idempotency keys;
-- canonical domain APIs;
-- player-safe error contracts;
-- feature flags and metrics.
+## Non-negotiables
 
-Do not introduce distributed services before a measured reliability or scaling need.
-
-## Architectural non-negotiables
-
-- PostgreSQL is the source of truth.
-- Canonical state does not depend on AI success.
-- Every retryable mutation is idempotent.
-- Every external delivery has explicit lifecycle state.
-- Ambiguous Telegram delivery is not automatically retried.
-- Ownership is derived server-side.
-- Secrets never reach browser payloads or analytics.
-- Social features are opt-in and kill-switchable.
-- Migrations are additive and production rollback keeps schema.
+- PostgreSQL is source of truth.
+- AI success is never required for canonical gameplay.
+- Retryable mutations are idempotent.
+- External delivery has explicit lifecycle.
+- Ambiguous Telegram delivery is not auto-retried.
+- Ownership is server-derived.
+- Public/export fields are explicitly selected.
+- Secrets do not reach browsers/analytics/public cards.
+- Reset/delete are tested lifecycle operations.
+- Risky social surfaces are opt-in and kill-switchable.
+- Migrations are additive and restore is verified.
 - Planned player flows do not depend on admin endpoints.

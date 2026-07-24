@@ -13,7 +13,7 @@ import { renderAvatar } from "./avatar.js";
 import { config } from "./config.js";
 import { open } from "./crypto.js";
 import { db, withTransaction } from "./db.js";
-import { applyImpossibleDoorChoice, ensureImpossibleDoorArc, getInventory, updateDoorStoryNarrative } from "./door-game.js";
+import { applyStoryArcChoice, ensureActiveStoryArc, getInventory, updateDoorStoryNarrative } from "./door-game.js";
 import { AppError } from "./errors.js";
 import { assertOnboardingComplete, bootstrapPlayer, buyShopItem, completeOnboarding, getDashboard, performAction, pickSocialTarget, recordEncounter, saveAIProfile, selectWakeChoice } from "./game.js";
 import {
@@ -147,7 +147,7 @@ app.get("/api/bootstrap",async(request)=>{
       if(encounter) dashboard=await getDashboard(client,player.id);
     }
     const local=await localDateForPlayer(client,player.id);
-    const storyArc=completed?await ensureImpossibleDoorArc(client,player.id,dashboard.creature.id):null;
+    const storyArc=completed?await ensureActiveStoryArc(client,player.id,dashboard.creature.id):null;
     const dailyReturn=completed?await ensureDailyReturnForDate(client,player.id,dashboard.creature.id,local.date):null;
     if(dailyReturn)await markDailyReturnOpened(client,player.id,dashboard.creature.id,dailyReturn.id);
     const [inventory,memories,personalityChange,profile,notifications,openrouter]=await Promise.all([
@@ -198,10 +198,10 @@ app.post("/api/settings/notifications",async(request)=>{
 app.post("/api/onboarding/wake",async(request)=>{const body=z.object({choice:z.enum(["gentle","noise","snack"])}).parse(request.body);const {creature,player}=await authenticatedPlayer(request.headers);return withTransaction((client)=>selectWakeChoice(client,player.id,creature.id,body.choice));});
 app.post("/api/onboarding/identity",async(request)=>{const body=z.object({name:z.string().min(1).max(80),marker:z.enum(["moon","star","dot"])}).parse(request.body);const {creature,player}=await authenticatedPlayer(request.headers);return withTransaction((client)=>completeOnboarding(client,player.id,creature.id,body));});
 
-app.post("/api/story/impossible-door/choice",{config:{rateLimit:{max:30,timeWindow:"1 minute"}}},async(request)=>{
-  const body=z.object({beatId:z.string().regex(/^[a-z0-9_-]{2,80}$/),choiceId:z.string().regex(/^[a-z0-9_-]{2,80}$/)}).parse(request.body);
-  const {creature,player}=await authenticatedPlayer(request.headers);await withTransaction((client)=>assertOnboardingComplete(client,creature.id));
-  const result=await withTransaction((client)=>applyImpossibleDoorChoice(client,player.id,creature.id,body));
+async function handleArcChoice(arcId:string,headers:Record<string,string|string[]|undefined>,body:{beatId:string;choiceId:string}) {
+  const {creature,player}=await authenticatedPlayer(headers);
+  await withTransaction((client)=>assertOnboardingComplete(client,creature.id));
+  const result=await withTransaction((client)=>applyStoryArcChoice(client,player.id,creature.id,{arcId,...body}));
   if(!result.replayed&&result.storyEntryId&&result.narrative) {
     // Canonical text is already committed; AI polish is best-effort and must never fail the request (issue #25).
     try {
@@ -211,10 +211,23 @@ app.post("/api/story/impossible-door/choice",{config:{rateLimit:{max:30,timeWind
         result.storyArc.story=narrative.story;
       }
     } catch(error) {
-      app.log.warn({error},"door narrative enrichment failed; serving canonical text");
+      app.log.warn({error},"arc narrative enrichment failed; serving canonical text");
     }
   }
   return result;
+}
+
+const arcChoiceBody=z.object({beatId:z.string().regex(/^[a-z0-9_-]{2,80}$/),choiceId:z.string().regex(/^[a-z0-9_-]{2,80}$/)});
+
+app.post("/api/story/arc/choice",{config:{rateLimit:{max:30,timeWindow:"1 minute"}}},async(request)=>{
+  const body=arcChoiceBody.extend({arcId:z.string().regex(/^[a-z0-9-]{2,60}$/)}).parse(request.body);
+  return handleArcChoice(body.arcId,request.headers,{beatId:body.beatId,choiceId:body.choiceId});
+});
+
+// Legacy path kept for Mini App clients cached before the second arc shipped.
+app.post("/api/story/impossible-door/choice",{config:{rateLimit:{max:30,timeWindow:"1 minute"}}},async(request)=>{
+  const body=arcChoiceBody.parse(request.body);
+  return handleArcChoice("impossible-door",request.headers,body);
 });
 
 app.post("/api/daily-return/:id/choice",async(request)=>{

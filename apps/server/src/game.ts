@@ -311,5 +311,7 @@ export async function recordEncounter(client: pg.PoolClient, playerId: string, c
 
 export async function saveAIProfile(client: pg.PoolClient, playerId: string, input: {baseUrl:string;model:string;apiKey:string}) {
   const url = await assertSafeAIBaseUrl(input.baseUrl);
-  await client.query(`INSERT INTO ai_profiles (player_id,base_url,model,encrypted_api_key,enabled) VALUES ($1,$2,$3,$4,true) ON CONFLICT (player_id) DO UPDATE SET base_url=EXCLUDED.base_url,model=EXCLUDED.model,encrypted_api_key=EXCLUDED.encrypted_api_key,enabled=true,updated_at=now()`,[playerId,url.toString().replace(/\/$/,""),input.model,seal(input.apiKey)]);
+  await client.query(`INSERT INTO ai_profiles (player_id,base_url,model,encrypted_api_key,enabled,source,external_user_id,connection_status,connection_metadata,connected_at,last_verified_at,disconnected_at)
+    VALUES ($1,$2,$3,$4,true,'manual',NULL,'active','{}',now(),NULL,NULL)
+    ON CONFLICT (player_id) DO UPDATE SET base_url=EXCLUDED.base_url,model=EXCLUDED.model,encrypted_api_key=EXCLUDED.encrypted_api_key,enabled=true,source='manual',external_user_id=NULL,connection_status='active',connection_metadata='{}',connected_at=now(),last_verified_at=NULL,disconnected_at=NULL,updated_at=now()`,[playerId,url.toString().replace(/\/$/,""),input.model,seal(input.apiKey)]);
 }

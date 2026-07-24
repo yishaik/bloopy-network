@@ -7,6 +7,7 @@
   <title>Bloopy Network</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/notifications.css">
+  <link rel="stylesheet" href="/openrouter.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -96,6 +97,26 @@
         </form>
       </section>
 
+      <section id="openrouter-card" class="card openrouter-card">
+        <div class="section-head">
+          <div><p class="eyebrow">CONNECTED MIND</p><h2 id="openrouter-title">Use your own OpenRouter account</h2></div>
+          <span id="openrouter-status" class="pill">not connected</span>
+        </div>
+        <p id="openrouter-description" class="section-copy">Optional: authorize a user-funded model without pasting an API key. Bloopy still controls every fact, choice and reward.</p>
+        <div id="openrouter-disconnected">
+          <button id="openrouter-connect" class="primary-action" type="button">Sign in with OpenRouter</button>
+          <p class="hint">OpenRouter usage is billed to your OpenRouter account. The base game remains playable without it.</p>
+        </div>
+        <div id="openrouter-connected" hidden>
+          <div id="openrouter-key-info" class="connection-facts"></div>
+          <div id="openrouter-models" class="model-options" role="radiogroup" aria-label="Connected Mind mode"></div>
+          <div class="connection-actions">
+            <button id="openrouter-verify" type="button" class="quiet-button">Verify connection</button>
+            <button id="openrouter-disconnect" type="button" class="danger-button">Disconnect and delete credential</button>
+          </div>
+        </div>
+      </section>
+
       <section id="ai-status-card" class="card mind-card">
         <div class="section-head"><div><p class="eyebrow">BLOOPY MIND</p><h2 id="ai-mode">Authored mind</h2></div><span id="ai-mode-pill" class="pill">safe fallback</span></div>
         <p id="ai-description" class="mind-description">Every story remains playable through authored narration.</p>
@@ -104,11 +125,11 @@
 
       <section class="card controls">
         <button id="spawn-bot">🤖 Give my creature a Telegram bot</button>
-        <details><summary>Advanced model connection</summary><form id="ai-form">
+        <details><summary>Developer: manual model connection</summary><form id="ai-form">
           <label>OpenAI-compatible endpoint<input name="baseUrl" placeholder="https://provider.example/v1" required></label>
           <label>Model<input name="model" placeholder="qwen3:4b" required></label>
           <label>API key<input name="apiKey" type="password" placeholder="private-provider-key" required></label>
-          <button type="submit">Save private brain connection</button><p class="hint">Advanced connections enrich narration but never change game rules, choices or rewards.</p>
+          <button type="submit">Save private brain connection</button><p class="hint">Saving this replaces a Connected Mind profile with a manual developer connection.</p>
         </form></details>
       </section>
     </div>
@@ -123,6 +144,7 @@
     </form>
   </dialog>
 
-  <div id="toast" role="status"></div><script type="module" src="/app.js"></script>
+  <div id="toast" role="status"></div>
+  <script type="module" src="/bootstrap.js"></script>
 </body>
 </html>

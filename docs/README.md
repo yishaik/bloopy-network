@@ -10,8 +10,11 @@ Bloopy is a Telegram-native persistent creature game. Players adopt a creature w
 
 - [Player guide](./PLAYER_GUIDE.md) — how the game works, what each feature means and what to expect.
 - [מדריך לשחקנים בעברית](./PLAYER_GUIDE_HE.md) — Hebrew player guide.
-- [Alpha testing](./ALPHA_TESTING.md) — current rollout phases, tester boundaries and bug-report format.
-- [Privacy and safety](./PRIVACY_AND_SAFETY.md) — what is stored, what is never exposed and how social features remain bounded.
+- [Product privacy summary](./PRIVACY.md) — current stored data, visibility and account controls.
+- [Privacy and safety model](./PRIVACY_AND_SAFETY.md) — engineering/social safety boundaries and future-feature requirements.
+- [Support](./SUPPORT.md) — support channels, severities and escalation.
+- [Phase-1 alpha](./PHASE1_ALPHA.md) — tester roster, journey and stop conditions.
+- [Alpha testing](./ALPHA_TESTING.md) — rollout phases and Telegram/social verification gates.
 
 ### Product and game design
 
@@ -24,14 +27,18 @@ Bloopy is a Telegram-native persistent creature game. Players adopt a creature w
 
 - [Architecture](./ARCHITECTURE.md) — system boundaries, data flow, persistence and reliability model.
 - [Developer guide](./DEVELOPER_GUIDE.md) — local setup, repository orientation and common implementation workflows.
+- [API reference](./API.md) — current HTTP routes, auth/error conventions and planned social APIs.
 - [Code style](./CODE_STYLE.md) — TypeScript, SQL, API, transaction, error and frontend conventions.
 - [Testing](./TESTING.md) — required test layers, database smoke suites and release gates.
 - [Contributing](../CONTRIBUTING.md) — branch, issue, PR and review expectations.
 
-### Operators
+### Launch and operations
 
+- [Go live](./GO_LIVE.md) — ordered release runbook.
 - [Production operations](./OPERATIONS.md) — Railway handoffs, health checks, runtime controls and recovery.
-- [Alpha testing](./ALPHA_TESTING.md) — staged production verification for manager bots, managed bots and bot-to-bot behavior.
+- [Backup and restore](./BACKUP_RESTORE.md) — backup commands and verified restore drill.
+- [Railway deployment](./RAILWAY_DEPLOY.md) — platform-specific deployment notes.
+- [Alpha testing](./ALPHA_TESTING.md) — staged production verification for manager bots, managed bots, direct meetings and future matchmaking.
 
 ## Documentation status labels
 
@@ -48,7 +55,7 @@ Do not describe planned behavior as available to players. Link the relevant GitH
 When documents appear to disagree, use this order:
 
 1. executable code and migrations on `main`;
-2. release and operational gates in `OPERATIONS.md` and `ALPHA_TESTING.md`;
+2. release and operational gates in `GO_LIVE.md`, `OPERATIONS.md` and `ALPHA_TESTING.md`;
 3. current GitHub issues and accepted design decisions;
 4. this documentation handbook;
 5. old PR descriptions or chat history.

@@ -90,3 +90,13 @@ jobs:
           path: notifications-db-smoke.log
       - if: steps.notification_smoke.outcome == 'failure'
         run: cat notifications-db-smoke.log && exit 1
+      - id: openrouter_smoke
+        continue-on-error: true
+        run: npm run test:openrouter-db -w @bloopy/server > openrouter-db-smoke.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: steps.openrouter_smoke.outcome == 'failure'
+        with:
+          name: openrouter-db-smoke-log
+          path: openrouter-db-smoke.log
+      - if: steps.openrouter_smoke.outcome == 'failure'
+        run: cat openrouter-db-smoke.log && exit 1

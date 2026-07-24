@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type pg from "pg";
 import { config } from "./config.js";
 import { open, seal } from "./crypto.js";
+import { AppError } from "./errors.js";
 
 export type OpenRouterMode="balanced"|"creative"|"smart";
 
@@ -73,7 +74,7 @@ export function pkceChallenge(verifier:string):string {
 
 export function modelForMode(mode:OpenRouterMode):OpenRouterModelOption {
   const option=OPENROUTER_MODELS.find((entry)=>entry.mode===mode);
-  if(!option)throw new Error("OpenRouter mode is not allowed");
+  if(!option)throw new AppError("openrouter_mode_invalid",400,"That Connected Mind mode is not on the menu.");
   return option;
 }
 
@@ -100,12 +101,12 @@ export async function beginOpenRouterConnection(client:pg.PoolClient,playerId:st
 }
 
 export async function claimOpenRouterState(client:pg.PoolClient,rawState:string):Promise<ClaimedOpenRouterState> {
-  if(!/^[A-Za-z0-9_-]{40,100}$/.test(rawState))throw new Error("invalid OAuth state");
+  if(!/^[A-Za-z0-9_-]{40,100}$/.test(rawState))throw new AppError("openrouter_state_invalid",400,"That authorization link is malformed.");
   const stateHash=hashOAuthState(rawState);
   const claimed=await client.query(`UPDATE openrouter_oauth_states SET status='exchanging',claimed_at=now(),updated_at=now()
     WHERE state_hash=$1 AND status='pending' AND expires_at>now()
     RETURNING player_id,verifier_cipher,callback_url`,[stateHash]);
-  if(!claimed.rowCount)throw new Error("OAuth state is expired or already used");
+  if(!claimed.rowCount)throw new AppError("openrouter_state_used",409,"That authorization link expired or was already used. Start the connection again.");
   return {stateHash,playerId:String(claimed.rows[0].player_id),verifier:open(String(claimed.rows[0].verifier_cipher)),callbackUrl:String(claimed.rows[0].callback_url)};
 }
 
@@ -171,20 +172,20 @@ export async function selectOpenRouterMode(client:pg.PoolClient,playerId:string,
   const selected=modelForMode(mode);
   const updated=await client.query(`UPDATE ai_profiles SET model=$2,connection_metadata=jsonb_set(connection_metadata,'{mode}',$3::jsonb,true),updated_at=now()
     WHERE player_id=$1 AND source='openrouter' AND enabled=true AND connection_status='active' RETURNING player_id`,[playerId,selected.model,JSON.stringify(mode)]);
-  if(!updated.rowCount)throw new Error("OpenRouter is not connected");
+  if(!updated.rowCount)throw new AppError("openrouter_not_connected",409,"OpenRouter is not connected right now.");
   await client.query(`INSERT INTO analytics_events (player_id,event_name,properties) VALUES ($1,'openrouter_model_selected',$2)`,[playerId,JSON.stringify({mode,model:selected.model,costTier:selected.costTier})]);
   return getOpenRouterConnection(client,playerId);
 }
 
 export async function verifyOpenRouterConnection(client:pg.PoolClient,playerId:string):Promise<{key:string;connection:OpenRouterConnectionView}> {
   const result=await client.query(`SELECT encrypted_api_key FROM ai_profiles WHERE player_id=$1 AND source='openrouter'`,[playerId]);
-  if(!result.rowCount)throw new Error("OpenRouter is not connected");
+  if(!result.rowCount)throw new AppError("openrouter_not_connected",409,"OpenRouter is not connected right now.");
   return {key:open(String(result.rows[0].encrypted_api_key)),connection:await getOpenRouterConnection(client,playerId)};
 }
 
 export async function recordOpenRouterVerification(client:pg.PoolClient,playerId:string,keyInfo:OpenRouterKeyInfo):Promise<OpenRouterConnectionView> {
   const updated=await client.query(`UPDATE ai_profiles SET enabled=true,connection_status='active',connection_metadata=jsonb_set(connection_metadata,'{keyInfo}',$2::jsonb,true),last_verified_at=now(),updated_at=now() WHERE player_id=$1 AND source='openrouter' RETURNING player_id`,[playerId,JSON.stringify(keyInfo)]);
-  if(!updated.rowCount)throw new Error("OpenRouter is not connected");
+  if(!updated.rowCount)throw new AppError("openrouter_not_connected",409,"OpenRouter is not connected right now.");
   return getOpenRouterConnection(client,playerId);
 }
 

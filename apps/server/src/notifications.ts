@@ -1,5 +1,6 @@
 import type pg from "pg";
 import { config } from "./config.js";
+import { AppError } from "./errors.js";
 import type { DailyReturnView } from "./memory.js";
 
 export interface NotificationPreferencesView {
@@ -78,7 +79,7 @@ export function isValidTimeZone(timezone:string):boolean {
 }
 
 function parseTime(value:string):number {
-  if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(value))throw new Error("time must use HH:mm");
+  if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(value))throw new AppError("time_format",400,"Times need the HH:mm format.");
   const [hours,minutes]=value.split(":").map(Number) as [number,number];
   return hours*60+minutes;
 }
@@ -112,9 +113,9 @@ export async function getNotificationPreferences(client:pg.PoolClient,playerId:s
 }
 
 export async function saveNotificationPreferences(client:pg.PoolClient,playerId:string,creatureId:string,input:NotificationSettingsInput):Promise<NotificationPreferencesView> {
-  if(!isValidTimeZone(input.timezone))throw new Error("unsupported timezone");
+  if(!isValidTimeZone(input.timezone))throw new AppError("timezone_invalid",400,"That timezone is not one Bloopy recognizes.");
   parseTime(input.deliveryTime);parseTime(input.quietStart);parseTime(input.quietEnd);
-  if(input.enabled&&timeFallsInQuietHours(input.deliveryTime,input.quietStart,input.quietEnd))throw new Error("daily delivery time falls inside quiet hours");
+  if(input.enabled&&timeFallsInQuietHours(input.deliveryTime,input.quietStart,input.quietEnd))throw new AppError("delivery_in_quiet_hours",400,"The daily time falls inside your quiet hours. Move one of them.");
   const nextDelivery=input.enabled?await computeNextDelivery(client,input.timezone,input.deliveryTime):null;
   const result=await client.query(`INSERT INTO notification_preferences (player_id,enabled,timezone,delivery_time,quiet_start,quiet_end,next_delivery_at)
     VALUES ($1,$2,$3,$4,$5,$6,$7)
@@ -125,7 +126,7 @@ export async function saveNotificationPreferences(client:pg.PoolClient,playerId:
 }
 
 export async function ensureDailyReturnForDate(client:pg.PoolClient,playerId:string,creatureId:string,returnDate:string,worldId="bloopy-origin"):Promise<DailyReturnView|null> {
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(returnDate))throw new Error("invalid local return date");
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(returnDate))throw new AppError("date_invalid",400,"That date did not look right.");
   const creatureResult=await client.query(`SELECT c.name,c.created_at,os.status AS onboarding_status FROM creatures c LEFT JOIN onboarding_states os ON os.creature_id=c.id WHERE c.id=$1`,[creatureId]);
   const creature=creatureResult.rows[0];
   if(!creature||creature.onboarding_status!=="complete")return null;

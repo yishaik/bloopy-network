@@ -21,7 +21,8 @@ Open `http://localhost:3000`. `DEMO_MODE=true` creates a local demo player witho
 1. Create a manager bot and enable **Bot Management Mode** and **Bot-to-Bot Communication Mode** in BotFather.
 2. Set `TELEGRAM_MANAGER_BOT_TOKEN`, `TELEGRAM_MANAGER_BOT_USERNAME`, `PUBLIC_BASE_URL` and a random `TELEGRAM_WEBHOOK_SECRET`.
 3. The server registers the manager webhook automatically when `PUBLIC_BASE_URL` uses HTTPS.
-4. Use `/spawn` or the Mini App button to let a user create a managed bot owned by them and managed by Bloopy.
+4. Managed personal bots and bot-to-bot conversations are disabled by default. Enable them only according to the staged gates in `docs/ALPHA_TESTING.md`.
+5. When the managed-bot fleet is enabled, use `/spawn` or the Mini App button to let a user create a managed bot owned by them and managed by Bloopy.
 
 ## Current playable vertical slice
 
@@ -31,16 +32,22 @@ Open `http://localhost:3000`. `DEMO_MODE=true` creates a local demo player witho
 - quests that progress and pay out (xp, stars, items)
 - a stars economy with Momo's shop (snacks, accessory swaps)
 - evolution tiers that change the avatar (glow at 2, crown at 3)
-- the impossible-door story arc with branching routes
+- two branching authored story arcs
 - player-to-player encounters via shared `meet_<slug>` links
 - proactive scheduled story events with rotating variety
 - consistent genome-based SVG avatars
-- manager bot `/start` and `/spawn`
-- managed-bot token registration and header-secret webhook provisioning
-- bounded direct bot-to-bot conversation protocol
-- encrypted OpenAI-compatible BYOK narration with SSRF-guarded endpoints
-- durable Telegram update dedup, outbox retries with dead-lettering
-- admin metrics endpoint (`/api/admin/metrics`, requires `ADMIN_API_KEY`)
-- PostgreSQL migrations, Docker and CI
+- manager bot `/start` and staged `/spawn`
+- managed-bot ownership, approved-chat controls, token rotation and revoke
+- persisted, signed and bounded bot-to-bot conversation protocol
+- encrypted OpenRouter OAuth and OpenAI-compatible BYOK narration
+- durable leased Telegram ingress and outbox delivery recovery
+- explicit retry, uncertain-delivery and dead-letter states
+- liveness, readiness, degraded mode and admin operational controls
+- PostgreSQL migrations, Docker and CI database smoke suites
 
-See `docs/PRODUCT.md` and `docs/ARCHITECTURE.md`.
+## Documentation
+
+- [`docs/PRODUCT.md`](docs/PRODUCT.md) — product direction
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system architecture
+- [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — Railway handoff, deployment, runtime controls and recovery
+- [`docs/ALPHA_TESTING.md`](docs/ALPHA_TESTING.md) — staged tester rollout and managed-bot verification gates

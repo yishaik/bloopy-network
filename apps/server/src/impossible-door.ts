@@ -66,14 +66,14 @@ function routeLabel(route:DoorRoute|null):string {
   return "nobody sensible";
 }
 
-function doorResponse(state:DoorStoryState,creatureName:string):DoorBeatView {
+function doorResponse(state:DoorStoryState,creatureName:string,route:DoorRoute|null):DoorBeatView {
   if(state.doorAction==="seal") return {
     id:"door_reacts",chapter:6,totalChapters:9,aiEligible:true,
     canonicalFacts:["The player chose to seal the impossible door.","The bent key is vibrating.",`${creatureName} is holding the line.`],
     allowedReferences:[creatureName,"Dr. Sock","red thread","bent key","impossible door"],
     story:story("The door objects to procedure",`${creatureName} presses the bent key against the frame. Red light crawls around the door like a signature being written by an angry spider. Something on the other side pushes back.`,[
       choice("hold_seal","Hold the seal together"),
-      choice("call_partner",`Call ${routeLabel(null)} for help anyway`)
+      choice("call_partner",`Call ${routeLabel(route)} for help anyway`)
     ],8)
   };
   if(state.doorAction==="listen") return {
@@ -247,7 +247,7 @@ export function buildImpossibleDoorBeat(beatId:string,creatureName:string,route:
         choice("listen_door","Listen through it first")
       ],8)
     };
-    case "door_reacts": return doorResponse(state,creatureName);
+    case "door_reacts": return doorResponse(state,creatureName,route);
     case "crisis": return crisisStory(route,state,creatureName);
     case "aftermath": return aftermathStory(route,state,creatureName);
     case "ending": return endingStory(route,state,creatureName);

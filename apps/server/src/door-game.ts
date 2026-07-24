@@ -8,11 +8,11 @@ import {
   type DoorRoute,
   type DoorStoryState
 } from "./impossible-door.js";
+import { config } from "./config.js";
 import type { StoryCard } from "./types.js";
 
-const impossibleDoorEnabled=process.env.IMPOSSIBLE_DOOR_ENABLED!=="false";
-const requestedCliffhangerDelay=Number(process.env.DOOR_CLIFFHANGER_DELAY_SECONDS??3600);
-const doorCliffhangerDelaySeconds=Number.isFinite(requestedCliffhangerDelay)&&requestedCliffhangerDelay>0?Math.floor(requestedCliffhangerDelay):3600;
+const impossibleDoorEnabled=config.IMPOSSIBLE_DOOR_ENABLED;
+const doorCliffhangerDelaySeconds=config.DOOR_CLIFFHANGER_DELAY_SECONDS;
 
 export interface ImpossibleDoorArcView {
   id:string;

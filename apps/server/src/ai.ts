@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { config } from "./config.js";
 import { open } from "./crypto.js";
+import { isBlockedText } from "./moderation.js";
+import { aiFetch } from "./net-guard.js";
 import type { StoryCard } from "./types.js";
 
 interface StoredAIProfile { base_url: string; model: string; encrypted_api_key: string }
@@ -69,7 +71,7 @@ export async function enrichStory(profile:StoredAIProfile|null,story:StoryCard,v
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),config.AI_TIMEOUT_MS);
   try {
-    const response=await fetch(`${provider.baseUrl}/chat/completions`,{
+    const response=await aiFetch(`${provider.baseUrl}/chat/completions`,{
       method:"POST",
       headers:{"content-type":"application/json",authorization:`Bearer ${provider.apiKey}`},
       body:JSON.stringify({
@@ -93,8 +95,10 @@ export async function enrichStory(profile:StoredAIProfile|null,story:StoryCard,v
     catch { return fallback(story,started,"invalid_json",input.length,provider); }
     const enriched=mergeNarrativeOutput(story,candidate);
     if(!enriched)return fallback(story,started,"schema_rejected",input.length,provider);
+    if(isBlockedText(`${enriched.title} ${enriched.body}`))return fallback(story,started,"moderation_rejected",input.length,provider);
     return {story:enriched,metadata:{provider:provider.source,model:provider.model,promptVersion:NARRATIVE_PROMPT_VERSION,usedAI:true,latencyMs:Date.now()-started,inputChars:input.length,outputChars:content.length}};
   } catch(error) {
-    return fallback(story,started,error instanceof DOMException&&error.name==="AbortError"?"timeout":"request_failed",input.length,provider);
+    const aborted=controller.signal.aborted||(error instanceof Error&&(error.name==="AbortError"||(error.cause instanceof Error&&error.cause.name==="AbortError")));
+    return fallback(story,started,aborted?"timeout":"request_failed",input.length,provider);
   } finally { clearTimeout(timeout); }
 }

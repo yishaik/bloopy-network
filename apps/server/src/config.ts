@@ -45,7 +45,15 @@ const schema = z.object({
   BOT_INTERACTION_MAX_TURNS: z.coerce.number().int().min(2).max(8).default(4),
   BOT_INTERACTION_PAIR_HOURLY_LIMIT: z.coerce.number().int().min(1).max(100).default(5),
   BOT_INTERACTION_OWNER_DAILY_LIMIT: z.coerce.number().int().min(1).max(500).default(20),
-  PROCESSED_UPDATE_RETENTION_DAYS: z.coerce.number().int().min(1).max(90).default(7)
+  PROCESSED_UPDATE_RETENTION_DAYS: z.coerce.number().int().min(1).max(90).default(7),
+  TELEGRAM_UPDATE_LEASE_SECONDS: z.coerce.number().int().min(15).max(300).default(60),
+  OUTBOX_LEASE_SECONDS: z.coerce.number().int().min(15).max(300).default(45),
+  TELEGRAM_UPDATE_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(20),
+  OUTBOX_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(20),
+  TELEGRAM_UPDATE_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+  OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(7),
+  READY_MAX_UPDATE_BACKLOG: z.coerce.number().int().min(1).max(100000).default(500),
+  READY_MAX_OUTBOX_BACKLOG: z.coerce.number().int().min(1).max(100000).default(500)
 }).superRefine((value, ctx) => {
   if (INSECURE_ENCRYPTION_KEYS.has(value.APP_ENCRYPTION_KEY)) ctx.addIssue({ code: "custom", path: ["APP_ENCRYPTION_KEY"], message: "APP_ENCRYPTION_KEY is the public all-zero development key; generate a real one with: openssl rand -base64 32" });
   if (value.NODE_ENV === "production") {

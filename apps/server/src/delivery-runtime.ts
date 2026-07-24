@@ -4,7 +4,7 @@ import { config } from "./config.js";
 import { open, seal } from "./crypto.js";
 import { db, withTransaction } from "./db.js";
 import { AppError } from "./errors.js";
-import { botCall, configureManagedBot, handleManagedBotUpdate, handleManagerUpdate, type TelegramUpdate } from "./telegram.js";
+import { botCall, handleManagedBotUpdate, handleManagerUpdate, type TelegramUpdate } from "./telegram.js";
 
 export type RuntimeControlKey="telegram_ingress"|"outbox_delivery"|"risky_mutations";
 interface TelegramJob{source:string;updateId:number;payload:TelegramUpdate;leaseToken:string;attempts:number}
@@ -12,6 +12,12 @@ interface OutboxJob{id:string;botId:number|null;chatId:string;payload:Record<str
 
 function errorText(error:unknown):string{return (error instanceof Error?error.message:"unknown error").slice(0,500)}
 function backoffSeconds(attempts:number):number{return Math.min(1800,Math.max(5,15*2**Math.min(Math.max(0,attempts-1),6)))+Math.floor(Math.random()*10)}
+
+async function configureManagedBot(token:string,botId:number,webhookSecret:string):Promise<void>{
+  await botCall(token,"setWebhook",{url:`${config.PUBLIC_BASE_URL}/telegram/managed/${botId}`,secret_token:webhookSecret,allowed_updates:["message"],drop_pending_updates:true});
+  await botCall(token,"setMyCommands",{commands:[{command:"start",description:"Wake up your creature"},{command:"adventure",description:"Start a small adventure"},{command:"meet",description:"Meet another creature"}]});
+  await botCall(token,"setChatMenuButton",{menu_button:{type:"web_app",text:"Open my world",web_app:{url:config.PUBLIC_BASE_URL}}});
+}
 
 export async function runtimeControlEnabled(client:pg.PoolClient,key:RuntimeControlKey):Promise<boolean>{
   const result=await client.query(`SELECT enabled FROM runtime_controls WHERE control_key=$1`,[key]);
@@ -176,8 +182,8 @@ async function deliveryToken(job:OutboxJob):Promise<string>{
 async function finalizeOutboxSuccess(job:OutboxJob,result:{message_id?:number},latencyMs:number):Promise<void>{
   await withTransaction(async(client)=>{
     const updated=await client.query(`UPDATE outbox SET status='sent',claim_token=NULL,lease_expires_at=NULL,sent_at=COALESCE(sent_at,now()),
-      completed_at=now(),telegram_message_id=$4,delivery_latency_ms=$5,last_error=NULL,error_class=NULL
-      WHERE id=$1 AND status='sending' AND claim_token=$2 RETURNING daily_return_id`,[job.id,job.claimToken,null,result.message_id??null,latencyMs]);
+      completed_at=now(),telegram_message_id=$3,delivery_latency_ms=$4,last_error=NULL,error_class=NULL
+      WHERE id=$1 AND status='sending' AND claim_token=$2 RETURNING daily_return_id`,[job.id,job.claimToken,result.message_id??null,latencyMs]);
     if(!updated.rowCount)return;
     if(job.botId)await client.query(`UPDATE managed_bots SET last_outbound_at=now(),updated_at=now() WHERE bot_id=$1`,[job.botId]);
     if(job.dailyReturnId){
@@ -190,10 +196,10 @@ async function finalizeOutboxSuccess(job:OutboxJob,result:{message_id?:number},l
 async function finalizeOutboxFailure(job:OutboxJob,error:unknown,latencyMs:number):Promise<void>{
   const classification=classifyDeliveryError(error,job.attempts);
   await withTransaction(async(client)=>{
-    await client.query(`UPDATE outbox SET status=$4,claim_token=NULL,lease_expires_at=NULL,last_error=$5,error_class=$6,delivery_latency_ms=$7,
-      available_at=CASE WHEN $4='retryable' THEN now()+($8||' seconds')::interval ELSE available_at END,
-      completed_at=CASE WHEN $4 IN ('uncertain','dead_letter') THEN now() ELSE completed_at END
-      WHERE id=$1 AND status='sending' AND claim_token=$2`,[job.id,job.claimToken,null,classification.status,errorText(error),classification.errorClass,latencyMs,classification.delaySeconds]);
+    await client.query(`UPDATE outbox SET status=$3,claim_token=NULL,lease_expires_at=NULL,last_error=$4,error_class=$5,delivery_latency_ms=$6,
+      available_at=CASE WHEN $3='retryable' THEN now()+($7||' seconds')::interval ELSE available_at END,
+      completed_at=CASE WHEN $3 IN ('uncertain','dead_letter') THEN now() ELSE completed_at END
+      WHERE id=$1 AND status='sending' AND claim_token=$2`,[job.id,job.claimToken,classification.status,errorText(error),classification.errorClass,latencyMs,classification.delaySeconds]);
     await client.query(`INSERT INTO operational_events (event_type,source_key,details) VALUES ('outbox_delivery_failed',$1,$2)`,[job.id,JSON.stringify({status:classification.status,errorClass:classification.errorClass,attempts:job.attempts,latencyMs})]);
   });
 }

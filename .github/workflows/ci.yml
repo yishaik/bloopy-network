@@ -110,3 +110,13 @@ jobs:
           path: telegram-control-db-smoke.log
       - if: steps.telegram_control_smoke.outcome == 'failure'
         run: cat telegram-control-db-smoke.log && exit 1
+      - id: delivery_runtime_smoke
+        continue-on-error: true
+        run: npm run test:delivery-runtime-db -w @bloopy/server > delivery-runtime-db-smoke.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: steps.delivery_runtime_smoke.outcome == 'failure'
+        with:
+          name: delivery-runtime-db-smoke-log
+          path: delivery-runtime-db-smoke.log
+      - if: steps.delivery_runtime_smoke.outcome == 'failure'
+        run: cat delivery-runtime-db-smoke.log && exit 1

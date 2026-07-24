@@ -71,6 +71,7 @@ function renderPersonalityChange(){
 function renderStoryArc(){
   const arc=state.storyArc;if(!arc){$("story-arc").hidden=true;$("free-actions").hidden=false;return;}
   $("story-arc").hidden=false;const progress=Math.max(0,Math.min(100,Math.round((arc.chapter/arc.totalChapters)*100)));
+  if(arc.display){$("arc-eyebrow").textContent=arc.display.eyebrow;$("arc-heading-title").textContent=arc.display.title;}
   $("arc-progress-fill").style.width=`${progress}%`;$("arc-progress-label").textContent=`Chapter ${arc.chapter} of ${arc.totalChapters}`;
   $("arc-title").textContent=arc.story.title;$("arc-body").textContent=arc.story.body;
   const route=routeLabel(arc.route);$("arc-route").hidden=!route;$("arc-route").textContent=route;
@@ -160,7 +161,7 @@ async function chooseWake(choice){setButtonsDisabled($("wake-options"),true);try
 
 async function finishGenesis(event){event.preventDefault();if(!selectedMarker){toast("Choose a mark first");return;}setButtonsDisabled($("identity-form"),true);try{const result=await api("/api/onboarding/identity",{method:"POST",body:JSON.stringify({name:$("identity-name").value,marker:selectedMarker})});if(result.story)toast(result.story.title);await refresh();}catch(error){toast(error.message);setButtonsDisabled($("identity-form"),false);}}
 
-async function chooseArc(choiceId){const arc=state.storyArc;if(!arc||arc.status!=="active")return;setButtonsDisabled($("arc-choices"),true);try{const result=await api("/api/story/impossible-door/choice",{method:"POST",body:JSON.stringify({beatId:arc.currentBeat,choiceId})});toast(result.storyArc.story.title);await refresh();}catch(error){toast(error.message);setButtonsDisabled($("arc-choices"),false);}}
+async function chooseArc(choiceId){const arc=state.storyArc;if(!arc||arc.status!=="active")return;setButtonsDisabled($("arc-choices"),true);try{const result=await api("/api/story/arc/choice",{method:"POST",body:JSON.stringify({arcId:arc.arcId,beatId:arc.currentBeat,choiceId})});toast(result.storyArc.story.title);await refresh();}catch(error){toast(error.message);setButtonsDisabled($("arc-choices"),false);}}
 
 async function chooseDaily(choice){const daily=state.dailyReturn;if(!daily||daily.status!=="active")return;setButtonsDisabled($("daily-choices"),true);try{const result=await api(`/api/daily-return/${encodeURIComponent(daily.id)}/choice`,{method:"POST",body:JSON.stringify({choice})});toast(result.story.title);await refresh();}catch(error){toast(error.message);setButtonsDisabled($("daily-choices"),false);}}
 

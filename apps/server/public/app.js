@@ -109,18 +109,52 @@ function renderAIStatus(){
   $("ai-mode").textContent="Authored Mind";$("ai-mode-pill").textContent="safe fallback";$("ai-description").textContent="Every scene is currently using deterministic authored narration. Nothing is blocked and no story decision is delegated to AI.";
 }
 
+function renderQuests(){
+  const quests=state.quests||[];
+  $("quests-card").hidden=quests.length===0;
+  $("quest-list").innerHTML=quests.map((quest)=>`
+    <article class="inventory-item quest ${quest.status==="completed"?"done":""}">
+      <span class="inventory-icon">${quest.status==="completed"?"✅":"🧷"}</span>
+      <div><b>${escapeHtml(quest.title)}</b><small>${escapeHtml(quest.description)}</small></div>
+      <span class="inventory-count">${quest.status==="completed"?"done":""}</span>
+    </article>`).join("");
+}
+
+function renderRelationships(){
+  const relationships=(state.relationships||[]).filter((rel)=>rel.target_name);
+  $("relationships-card").hidden=relationships.length===0;
+  $("relationship-list").innerHTML=relationships.map((rel)=>`
+    <article class="inventory-item">
+      <img class="relationship-avatar" src="/api/creatures/${rel.target_creature_id}/avatar.svg" alt="">
+      <div><b>${escapeHtml(rel.target_name)}</b><small>${escapeHtml(String(rel.last_event||"").replaceAll("_"," "))}</small></div>
+      <span class="inventory-count">🤝${Number(rel.trust)} 💛${Number(rel.affection)}</span>
+    </article>`).join("");
+}
+
+function renderShop(){
+  const items=state.shop||[];
+  const stars=Number(state.creature.stars||0);
+  $("shop-card").hidden=items.length===0;
+  $("shop-list").innerHTML=items.map((item)=>`
+    <article class="inventory-item">
+      <span class="inventory-icon">${escapeHtml(item.icon)}</span>
+      <div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.description)}</small></div>
+      <button class="shop-buy" data-shop-item="${escapeHtml(item.id)}" ${stars<item.cost?"disabled":""}>⭐ ${item.cost}</button>
+    </article>`).join("");
+}
+
 function renderGame(){
   $("genesis").hidden=true;$("game-shell").hidden=false;const creature=state.creature;
   $("creature-name").textContent=creature.name;$("mood-line").textContent=`${creature.mood} · ${creature.current_location.replaceAll("_"," ")}`;
   $("avatar").src=`/api/creatures/${creature.id}/avatar.svg?v=${creature.level}-${encodeURIComponent(creature.updated_at||"")}`;
-  $("energy").textContent=creature.energy;$("level").textContent=`Lv ${creature.level}`;$("xp").textContent=creature.xp;
-  renderDailyReturn();renderPersonalityChange();renderStoryArc();renderInventory();renderMemories();renderNotifications();renderAIStatus();
+  $("energy").textContent=creature.energy;$("level").textContent=`Lv ${creature.level}`;$("xp").textContent=creature.xp;$("stars").textContent=creature.stars??0;
+  renderDailyReturn();renderPersonalityChange();renderStoryArc();renderQuests();renderInventory();renderShop();renderRelationships();renderMemories();renderNotifications();renderAIStatus();
   $("story-feed").innerHTML=(state.stories||[]).map(storyCard).join("");
   $("npc-list").innerHTML=(state.npcs||[]).map((npc)=>`<div class="npc"><img src="/api/creatures/${npc.id}/avatar.svg"><b>${escapeHtml(npc.name)}</b><small>${escapeHtml(npc.current_location.replaceAll("_"," "))}</small></div>`).join("");
 }
 
 function render(){const onboarding=state.onboarding;if(onboarding?.enabled&&onboarding.status!=="complete")renderGenesis(onboarding);else renderGame();}
-async function refresh(){state=await api("/api/bootstrap");render();}
+async function refresh(){state=await api("/api/bootstrap");render();if(state.encounter?.metName)toast(`✨ ${state.creature.name} met ${state.encounter.metName}!`);}
 
 async function chooseWake(choice){setButtonsDisabled($("wake-options"),true);try{const result=await api("/api/onboarding/wake",{method:"POST",body:JSON.stringify({choice})});if(result.story)toast(result.story.title);await refresh();}catch(error){toast(error.message);setButtonsDisabled($("wake-options"),false);}}
 
@@ -129,6 +163,8 @@ async function finishGenesis(event){event.preventDefault();if(!selectedMarker){t
 async function chooseArc(choiceId){const arc=state.storyArc;if(!arc||arc.status!=="active")return;setButtonsDisabled($("arc-choices"),true);try{const result=await api("/api/story/impossible-door/choice",{method:"POST",body:JSON.stringify({beatId:arc.currentBeat,choiceId})});toast(result.storyArc.story.title);await refresh();}catch(error){toast(error.message);setButtonsDisabled($("arc-choices"),false);}}
 
 async function chooseDaily(choice){const daily=state.dailyReturn;if(!daily||daily.status!=="active")return;setButtonsDisabled($("daily-choices"),true);try{const result=await api(`/api/daily-return/${encodeURIComponent(daily.id)}/choice`,{method:"POST",body:JSON.stringify({choice})});toast(result.story.title);await refresh();}catch(error){toast(error.message);setButtonsDisabled($("daily-choices"),false);}}
+
+async function buyItem(itemId){setButtonsDisabled($("shop-list"),true);try{const result=await api("/api/shop/buy",{method:"POST",body:JSON.stringify({itemId})});toast(result.story.title);await refresh();}catch(error){toast(error.message);setButtonsDisabled($("shop-list"),false);}}
 
 async function act(action){document.querySelectorAll("button[data-action]").forEach((button)=>{button.disabled=true;});try{const result=await api("/api/actions",{method:"POST",body:JSON.stringify({action})});toast(result.story.title);await refresh();}catch(error){toast(error.message);}finally{document.querySelectorAll("button[data-action]").forEach((button)=>{button.disabled=false;});}}
 
@@ -154,12 +190,13 @@ document.addEventListener("click",(event)=>{
   const arcButton=event.target.closest("button[data-arc-choice]");if(arcButton){void chooseArc(arcButton.dataset.arcChoice);return;}
   const editButton=event.target.closest("button[data-memory-edit]");if(editButton){openMemoryEditor(editButton.dataset.memoryEdit);return;}
   const deleteButton=event.target.closest("button[data-memory-delete]");if(deleteButton){void removeMemory(deleteButton.dataset.memoryDelete);return;}
+  const shopButton=event.target.closest("button[data-shop-item]");if(shopButton){void buyItem(shopButton.dataset.shopItem);return;}
   const actionButton=event.target.closest("button[data-action]");if(actionButton)void act(actionButton.dataset.action);
 });
 
 $("identity-form").addEventListener("submit",finishGenesis);$("memory-form").addEventListener("submit",saveMemoryCorrection);$("memory-cancel").addEventListener("click",closeMemoryEditor);$("notification-form").addEventListener("submit",saveNotifications);
 
-$("share").addEventListener("click",()=>{const latest=state.stories?.[0];if(!latest)return;const url=`${location.origin}/?startapp=meet_${state.creature.slug}`;const share=`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(`${state.creature.name}: ${latest.title}`)}`;tg?.openTelegramLink?tg.openTelegramLink(share):window.open(share,"_blank","noopener");});
+$("share").addEventListener("click",()=>{const latest=state.stories?.[0];if(!latest)return;const url=state.managerBotUsername?`https://t.me/${state.managerBotUsername}?start=meet_${state.creature.slug}`:`${location.origin}/?startapp=meet_${state.creature.slug}`;const share=`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(`${state.creature.name}: ${latest.title}`)}`;tg?.openTelegramLink?tg.openTelegramLink(share):window.open(share,"_blank","noopener");});
 $("spawn-bot").addEventListener("click",async()=>{try{const {url}=await api("/api/bots/spawn-link");tg?.openTelegramLink?tg.openTelegramLink(url):window.open(url,"_blank","noopener");}catch(error){toast(error.message);}});
 $("ai-form").addEventListener("submit",async(event)=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));try{await api("/api/settings/ai",{method:"POST",body:JSON.stringify(values)});event.currentTarget.reset();toast("Private model connection saved");await refresh();}catch(error){toast(error.message);}});
 

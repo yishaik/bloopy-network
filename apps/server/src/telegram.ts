@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { config } from "./config.js";
 import { open, seal } from "./crypto.js";
-import { bootstrapPlayer, getOnboardingState, performAction } from "./game.js";
+import { bootstrapPlayer, getOnboardingState, performAction, recordEncounter } from "./game.js";
 import { parseBotConversation } from "./story.js";
 import type { TelegramUser } from "./types.js";
 
@@ -36,7 +36,7 @@ async function registerManagedBot(client:pg.PoolClient,update:NonNullable<Telegr
   if (!creature) throw new Error("finish creating the creature before giving it a bot");
   const webhookSecret=randomBytes(24).toString("base64url");
   await client.query(`INSERT INTO managed_bots (bot_id,owner_telegram_user_id,creature_id,username,token_cipher,webhook_secret) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (bot_id) DO UPDATE SET username=EXCLUDED.username,token_cipher=EXCLUDED.token_cipher,webhook_secret=EXCLUDED.webhook_secret,enabled=true,updated_at=now()`,[update.bot.id,update.user.id,creature.id,update.bot.username??null,seal(token),webhookSecret]);
-  await botCall(token,"setWebhook",{url:`${config.PUBLIC_BASE_URL}/telegram/managed/${update.bot.id}/${webhookSecret}`,allowed_updates:["message"],drop_pending_updates:true});
+  await botCall(token,"setWebhook",{url:`${config.PUBLIC_BASE_URL}/telegram/managed/${update.bot.id}`,secret_token:webhookSecret,allowed_updates:["message"],drop_pending_updates:true});
   await botCall(token,"setMyCommands",{commands:[{command:"start",description:"Wake up your creature"},{command:"adventure",description:"Start a small adventure"},{command:"meet",description:"Meet another creature"}]});
   await botCall(token,"setChatMenuButton",{menu_button:{type:"web_app",text:"Open my world",web_app:{url:config.PUBLIC_BASE_URL}}});
   return token;
@@ -51,7 +51,7 @@ export async function handleManagerUpdate(client:pg.PoolClient,update:TelegramUp
   }
   const message=update.message;
   if (!message?.from || message.from.is_bot) return;
-  const {creature}=await bootstrapPlayer(client,message.from);
+  const {player,creature}=await bootstrapPlayer(client,message.from);
   const onboarding=await getOnboardingState(client,creature.id);
   const text=message.text??"";
   if (text.startsWith("/start")) {
@@ -59,7 +59,15 @@ export async function handleManagerUpdate(client:pg.PoolClient,update:TelegramUp
       await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"sendMessage",{chat_id:message.chat.id,text:"There is something asleep inside a cardboard nest. It needs you to decide how this story begins.",reply_markup:{inline_keyboard:[[{text:"Open the nest",web_app:{url:config.PUBLIC_BASE_URL}}]]}});
       return;
     }
-    await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"sendMessage",{chat_id:message.chat.id,text:`${creature.name} is awake and has already misplaced something important.`,reply_markup:{inline_keyboard:[[{text:"Open the world",web_app:{url:config.PUBLIC_BASE_URL}},{text:"Give it a bot",url:managedBotCreationLink(creature.name,message.from.id)}]]}});
+    let greeting=`${creature.name} is awake and has already misplaced something important.`;
+    const startPayload=text.split(/\s+/)[1];
+    if(startPayload?.startsWith("meet_")) {
+      const met=await recordEncounter(client,player.id,{id:creature.id,name:creature.name,slug:creature.slug},startPayload.slice(5).toLowerCase());
+      if(met) greeting=`${creature.name} and ${met.metName} are now officially acquainted.\n\n${greeting}`;
+    }
+    const buttons:Array<Record<string,unknown>>=[{text:"Open the world",web_app:{url:config.PUBLIC_BASE_URL}}];
+    if(config.TELEGRAM_MANAGER_BOT_USERNAME) buttons.push({text:"Give it a bot",url:managedBotCreationLink(creature.name,message.from.id)});
+    await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"sendMessage",{chat_id:message.chat.id,text:greeting,reply_markup:{inline_keyboard:[buttons]}});
     return;
   }
   if (onboarding.status!=="complete") {
@@ -102,6 +110,15 @@ export async function startBotConversation(client:pg.PoolClient,sourceBotId:numb
   return interactionId;
 }
 
+// Re-registers older managed bots whose webhook secret was minted into the URL path (issue #21).
+export async function migrateManagedWebhooks(runner:pg.Pool):Promise<void> {
+  const bots=await runner.query("SELECT bot_id,token_cipher,webhook_secret FROM managed_bots WHERE enabled=true");
+  for (const bot of bots.rows) {
+    try { await botCall(open(bot.token_cipher),"setWebhook",{url:`${config.PUBLIC_BASE_URL}/telegram/managed/${bot.bot_id}`,secret_token:bot.webhook_secret,allowed_updates:["message"]}); }
+    catch (error) { console.error({error,botId:bot.bot_id},"managed webhook migration failed"); }
+  }
+}
+
 export async function configureManagerWebhook():Promise<void> {
   if (!config.TELEGRAM_MANAGER_BOT_TOKEN || !config.PUBLIC_BASE_URL.startsWith("https://")) return;
   await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"setWebhook",{url:`${config.PUBLIC_BASE_URL}/telegram/manager`,secret_token:config.TELEGRAM_WEBHOOK_SECRET,allowed_updates:["message","managed_bot"],drop_pending_updates:false});
@@ -124,7 +141,7 @@ export async function dispatchOutbox(client:pg.PoolClient):Promise<number> {
       }
     } catch (error) {
       const message=(error instanceof Error?error.message:"Telegram delivery failed").slice(0,500);
-      await client.query(`UPDATE outbox SET attempts=attempts+1,status=CASE WHEN attempts+1>=5 THEN 'failed' ELSE 'pending' END,available_at=now()+interval '2 minutes',last_error=$2 WHERE id=$1`,[row.id,message]);
+      await client.query(`UPDATE outbox SET attempts=attempts+1,status=CASE WHEN attempts+1>=7 THEN 'failed' ELSE 'pending' END,available_at=now()+(interval '1 second'*(60*POWER(2,LEAST(attempts,5))+floor(random()*30))),last_error=$2 WHERE id=$1`,[row.id,message]);
       console.error({error,outboxId:row.id},"outbox delivery failed");
     }
   }

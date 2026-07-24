@@ -77,6 +77,6 @@ describe("the impossible door",()=>{
   });
 
   it("rejects choices that are not authored for the current beat",()=>{
-    expect(()=>resolveImpossibleDoorChoice("dust_moved","open_door",null,{},"Piko")).toThrow("choice is not available");
+    expect(()=>resolveImpossibleDoorChoice("dust_moved","open_door",null,{},"Piko")).toThrow("door_invalid_choice");
   });
 });

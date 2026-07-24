@@ -22,7 +22,7 @@ export async function withTransaction<T>(fn: (client: pg.PoolClient) => Promise<
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    try { await client.query("ROLLBACK"); } catch (rollbackError) { console.error({ rollbackError }, "rollback failed after transaction error"); }
     throw error;
   } finally {
     client.release();

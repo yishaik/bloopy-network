@@ -30,7 +30,7 @@ Secrets:
 - `APP_ENCRYPTION_KEY`
 - `TELEGRAM_MANAGER_BOT_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET`
-- optional `ADMIN_API_KEY` for operational endpoints
+- `ADMIN_API_KEY` for operational endpoints and the release preflight (required in production, min 32 characters)
 - optional `PLATFORM_AI_API_KEY` only after a platform model is explicitly selected
 
 Non-secret configuration:
@@ -42,6 +42,9 @@ Non-secret configuration:
 - `TELEGRAM_INGRESS_ENABLED=true`
 - `OUTBOX_ENABLED=true`
 - `DEGRADED_MODE=false`
+- `ALLOW_LOCAL_AI=false`
+
+The server refuses to boot in production if any of these is missing or unsafe, so a misconfigured deploy fails at start rather than at the first player. The full list is in [`GO_LIVE.md`](GO_LIVE.md).
 
 The following risky surfaces remain disabled until their human verification gates pass:
 
@@ -65,7 +68,7 @@ Checks that the application process can answer. It does not prove database or qu
 Checks:
 
 - PostgreSQL connectivity;
-- migration `019_telegram_delivery_runtime.sql` is applied;
+- every migration shipped in this build has been applied — any that have not are named in `missingMigrations`;
 - Telegram update backlog is below `READY_MAX_UPDATE_BACKLOG`;
 - outbox backlog is below `READY_MAX_OUTBOX_BACKLOG`.
 
@@ -75,7 +78,13 @@ A `503` response means the deployment should not receive new traffic until the r
 
 `GET /health`
 
-Checks PostgreSQL and returns the application version. Release `0.11.0` is the leased Telegram delivery runtime.
+Checks PostgreSQL and returns the application version, read from `apps/server/package.json` so it cannot drift from the build. Release `0.12.0` adds self-service data controls, share cards and the release preflight.
+
+### Release preflight
+
+`npm run release:check -- --base-url https://… --phase 1`
+
+Probes all three endpoints plus the admin metrics and reports pass/fail per gate-A check. See [`GO_LIVE.md`](GO_LIVE.md).
 
 ## Runtime controls
 
@@ -196,7 +205,9 @@ This makes expired update leases retryable and expired outbound leases uncertain
 - analytics events;
 - security events;
 - bot-interaction states;
-- operational events.
+- operational events;
+- account lifecycle actions (export, reset, deletion) in the last 24 hours;
+- the applied migration ledger and the running version.
 
 Stop adding testers when any of the following occurs:
 
@@ -237,6 +248,14 @@ Migrations are forward-safe and additive. Do not attempt to roll back schema mig
 - old sent outbox rows are cleaned after their retention period;
 - active, retryable, processing, uncertain and dead-letter work is not deleted by routine cleanup.
 
+## Backup and restore
+
+Backups are taken and *verified* with `./scripts/backup-database.sh` and `./scripts/verify-restore.sh`. The full procedure, cadence and the restore-crossing-a-deletion caveat are in [`BACKUP_RESTORE.md`](BACKUP_RESTORE.md). The restore drill also runs in CI on every change.
+
+## Player data requests
+
+Export, creature reset and account deletion are self-service in the Mini App under **Your data**. The manual operator fallback, the verification rules for a request that arrives through support, and what is anonymized rather than deleted are in [`PRIVACY.md`](PRIVACY.md).
+
 ## Human verification dependency
 
-Managed-bot ownership and bot-to-bot behavior cannot be fully verified without real Telegram resources. The required staged test and feature-enable sequence is defined in [`ALPHA_TESTING.md`](./ALPHA_TESTING.md).
+Managed-bot ownership and bot-to-bot behavior cannot be fully verified without real Telegram resources. The required staged test and feature-enable sequence is defined in [`ALPHA_TESTING.md`](./ALPHA_TESTING.md), and the ordered launch runbook is [`GO_LIVE.md`](GO_LIVE.md).

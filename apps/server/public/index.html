@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/notifications.css">
   <link rel="stylesheet" href="/openrouter.css">
+  <link rel="stylesheet" href="/account.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -123,6 +124,17 @@
         <div id="ai-usage" class="mind-usage" hidden><div class="mind-meter" aria-label="Daily AI usage"><span id="ai-usage-fill"></span></div><small id="ai-usage-label"></small></div>
       </section>
 
+      <section id="account-card" class="card account-card">
+        <div class="section-head"><div><p class="eyebrow">YOUR DATA</p><h2>Export, start over or delete</h2></div><span class="pill">privacy</span></div>
+        <p class="section-copy">Everything your creature has lived through belongs to you. Downloads never contain API keys, bot tokens, webhook secrets or Telegram sign-in data.</p>
+        <div class="account-actions">
+          <button id="account-export" type="button" class="quiet-button">Download my data</button>
+          <button id="account-reset" type="button" class="quiet-button">Start over with a new creature</button>
+          <button id="account-delete" type="button" class="danger-button">Delete my account</button>
+        </div>
+        <p class="hint">Starting over permanently removes <b id="account-creature-name">your creature</b>, its stories, memories, items and any creature bot, and keeps your Telegram account. Deleting removes the account too. Neither can be undone.</p>
+      </section>
+
       <section class="card controls">
         <button id="spawn-bot">🤖 Give my creature a Telegram bot</button>
         <details><summary>Developer: manual model connection</summary><form id="ai-form">
@@ -141,6 +153,15 @@
       <p class="hint">This changes future narration, not canonical game state such as the creature's actual name, inventory or completed choices.</p>
       <textarea id="memory-summary" name="summary" minlength="3" maxlength="280" rows="5" required></textarea>
       <button type="submit">Save corrected memory</button>
+    </form>
+  </dialog>
+
+  <dialog id="account-dialog" class="memory-dialog">
+    <form id="account-form" method="dialog">
+      <div class="section-head"><div><p class="eyebrow">THIS CANNOT BE UNDONE</p><h2 id="account-dialog-title"></h2></div><button id="account-cancel" type="button" class="quiet">Cancel</button></div>
+      <p id="account-dialog-body" class="hint"></p>
+      <label>Type <b id="account-dialog-word"></b> to confirm<input id="account-confirm" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" required></label>
+      <button id="account-dialog-submit" type="submit" class="danger-button"></button>
     </form>
   </dialog>
 

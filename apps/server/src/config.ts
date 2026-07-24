@@ -57,11 +57,27 @@ const schema = z.object({
   READY_MAX_OUTBOX_BACKLOG: z.coerce.number().int().min(1).max(100000).default(500)
 }).superRefine((value, ctx) => {
   if (INSECURE_ENCRYPTION_KEYS.has(value.APP_ENCRYPTION_KEY)) ctx.addIssue({ code: "custom", path: ["APP_ENCRYPTION_KEY"], message: "APP_ENCRYPTION_KEY is the public all-zero development key; generate one with: openssl rand -base64 32" });
+  // Enabling bot-to-bot without the fleet reads as "on" in the dashboard but can never start a
+  // meeting, which is exactly the kind of ambiguity a kill switch must not have — in any environment.
+  if (value.BOT_TO_BOT_ENABLED && !value.MANAGED_BOT_FLEET_ENABLED) ctx.addIssue({ code: "custom", path: ["BOT_TO_BOT_ENABLED"], message: "BOT_TO_BOT_ENABLED requires MANAGED_BOT_FLEET_ENABLED; bot meetings need managed bots to exist" });
   if (value.NODE_ENV === "production") {
     if (value.DEMO_MODE) ctx.addIssue({ code: "custom", path: ["DEMO_MODE"], message: "DEMO_MODE must be false in production" });
     if (PLACEHOLDER_SECRETS.has(value.TELEGRAM_WEBHOOK_SECRET)) ctx.addIssue({ code: "custom", path: ["TELEGRAM_WEBHOOK_SECRET"], message: "TELEGRAM_WEBHOOK_SECRET is a placeholder; generate one with: openssl rand -base64 24" });
+    // Telegram only delivers webhooks to HTTPS, and the share/OAuth callback URLs are built from it.
+    if (!value.PUBLIC_BASE_URL.startsWith("https://")) ctx.addIssue({ code: "custom", path: ["PUBLIC_BASE_URL"], message: "PUBLIC_BASE_URL must be an https:// URL in production" });
+    // The loopback exemption in the SSRF guard is a development affordance; in production it would
+    // let a saved AI endpoint reach the container's own services.
+    if (value.ALLOW_LOCAL_AI) ctx.addIssue({ code: "custom", path: ["ALLOW_LOCAL_AI"], message: "ALLOW_LOCAL_AI must be false in production; it exempts loopback addresses from the SSRF guard" });
+    if (value.TELEGRAM_INGRESS_ENABLED && !value.TELEGRAM_MANAGER_BOT_TOKEN) ctx.addIssue({ code: "custom", path: ["TELEGRAM_MANAGER_BOT_TOKEN"], message: "TELEGRAM_INGRESS_ENABLED requires TELEGRAM_MANAGER_BOT_TOKEN; without it no update is ever processed" });
+    // The recovery drills in docs/OPERATIONS.md and the release preflight both run through the admin
+    // endpoints, which stay disabled while this is unset.
+    if (!value.ADMIN_API_KEY) ctx.addIssue({ code: "custom", path: ["ADMIN_API_KEY"], message: "ADMIN_API_KEY is required in production; operational recovery and the release preflight depend on it" });
+    if (value.MANAGED_BOT_FLEET_ENABLED && !value.TELEGRAM_MANAGER_BOT_USERNAME) ctx.addIssue({ code: "custom", path: ["TELEGRAM_MANAGER_BOT_USERNAME"], message: "MANAGED_BOT_FLEET_ENABLED requires TELEGRAM_MANAGER_BOT_USERNAME to build bot creation links" });
   }
 });
 
 export type Config = z.infer<typeof schema>;
+// Exported so the production launch guards can be tested directly, without re-importing this module
+// under a mutated process environment.
+export const configSchema = schema;
 export const config = schema.parse(process.env);

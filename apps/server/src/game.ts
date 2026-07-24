@@ -16,6 +16,7 @@ import {
   type VisualMarker,
   type WakeChoice
 } from "./onboarding.js";
+import { rewardPendingReferral } from "./share.js";
 import { buildStory, type GameAction } from "./story.js";
 import type { AvatarGenome, OnboardingState, Personality, StoryCard, TelegramUser } from "./types.js";
 
@@ -83,7 +84,11 @@ export async function bootstrapPlayer(client: pg.PoolClient, user: TelegramUser)
     const personality = starterPersonality(user.id);
     const genome = starterGenome(user.id);
     const initialName=config.CHARACTER_GENESIS_ENABLED?"Unnamed Bloopy":`${user.first_name}'s Bloopy`;
-    const inserted = await client.query(`INSERT INTO creatures (player_id,slug,name,kind,personality,genome,energy,mood,current_location) VALUES ($1,$2,$3,'player',$4,$5,82,'sleepy','cardboard_nest') ON CONFLICT (slug) DO NOTHING RETURNING *`, [player.id,`bloopy-${user.id}`,initialName,personality,genome]);
+    // A creature adopted after a reset gets its own slug, so links shared for the previous creature
+    // resolve to nothing instead of quietly pointing at a stranger's replacement.
+    const generation=Number(player.creature_generation??1);
+    const slug=generation>1?`bloopy-${user.id}-g${generation}`:`bloopy-${user.id}`;
+    const inserted = await client.query(`INSERT INTO creatures (player_id,slug,name,kind,personality,genome,energy,mood,current_location) VALUES ($1,$2,$3,'player',$4,$5,82,'sleepy','cardboard_nest') ON CONFLICT (slug) DO NOTHING RETURNING *`, [player.id,slug,initialName,personality,genome]);
     if (inserted.rowCount) {
       const creature = inserted.rows[0];
       if(config.CHARACTER_GENESIS_ENABLED) {
@@ -176,7 +181,9 @@ export async function completeOnboarding(client:pg.PoolClient,playerId:string,cr
   await recordAnalytics(client,playerId,creatureId,"creature_named",{length:name.length});
   await recordAnalytics(client,playerId,creatureId,"visual_marker_selected",{marker:input.marker});
   await recordAnalytics(client,playerId,creatureId,"onboarding_completed",{wakeChoice:choice,marker:input.marker});
-  return {story,onboarding:await getOnboardingState(client,creatureId),creature:{name,genome,xp,level}};
+  // Paid here rather than at link-open so the reward always lands on a creature that exists.
+  const referral=await rewardPendingReferral(client,playerId,creatureId);
+  return {story,onboarding:await getOnboardingState(client,creatureId),creature:{name,genome,xp,level},referredBy:referral?.referrerName??null};
 }
 
 export async function pickSocialTarget(runner: Queryable, creatureId: string): Promise<{id:string;slug:string;name:string}|null> {
@@ -291,12 +298,14 @@ export async function buyShopItem(client: pg.PoolClient, playerId: string, creat
   return { stars: stars-item.cost, energy: newEnergy, genome: newGenome, story: { title: "A transaction at the button market", body, choices: [], reward: {} } };
 }
 
-// Player-to-player meeting via a shared deep link (?startapp=meet_<slug> or /start meet_<slug>).
-export async function recordEncounter(client: pg.PoolClient, playerId: string, creature: {id:string;name:string;slug:string}, targetSlug: string) {
-  if (!/^[a-z0-9-]{2,80}$/.test(targetSlug) || targetSlug === creature.slug) return null;
-  const targetResult = await client.query("SELECT id,name,player_id FROM creatures WHERE slug=$1 AND kind='player'",[targetSlug]);
+// Player-to-player meeting via a shared deep link (?startapp=meet_<ref> or /start meet_<ref>).
+// The reference is an opaque share token for links made from the share sheet, or a slug for links
+// shared before share tokens existed.
+export async function recordEncounter(client: pg.PoolClient, playerId: string, creature: {id:string;name:string;slug:string}, targetRef: string) {
+  if (!/^[a-z0-9-]{2,80}$/.test(targetRef) || targetRef === creature.slug) return null;
+  const targetResult = await client.query("SELECT id,name,player_id FROM creatures WHERE (share_token=$1 OR slug=$1) AND kind='player'",[targetRef]);
   const target = targetResult.rows[0];
-  if (!target) return null;
+  if (!target || String(target.id) === creature.id) return null;
   const edge = await client.query(`INSERT INTO relationships (source_creature_id,target_creature_id,trust,affection,rivalry,last_event) VALUES ($1,$2,4,5,0,'link_meeting') ON CONFLICT (source_creature_id,target_creature_id) DO NOTHING RETURNING id`,[creature.id,target.id]);
   if (!edge.rowCount) return null;
   await client.query(`INSERT INTO relationships (source_creature_id,target_creature_id,trust,affection,rivalry,last_event) VALUES ($1,$2,4,5,0,'link_meeting') ON CONFLICT (source_creature_id,target_creature_id) DO NOTHING`,[target.id,creature.id]);
@@ -305,7 +314,7 @@ export async function recordEncounter(client: pg.PoolClient, playerId: string, c
   await client.query(`INSERT INTO story_entries (creature_id,title,body,choices,reward) VALUES ($1,$2,$3,'[]','{"xp":8}')`,[target.id,`${target.name} met ${creature.name}`,meetingBody(target.name,creature.name)]);
   await client.query(`UPDATE creatures SET xp=xp+8,level=GREATEST(level,1+FLOOR((xp+8)/100.0)::integer),updated_at=now() WHERE id IN ($1,$2)`,[creature.id,target.id]);
   await client.query(`INSERT INTO memories (creature_id,source_type,summary,importance,is_private) VALUES ($1,'encounter',$2,0.6,false),($3,'encounter',$4,0.6,false)`,[creature.id,`Met ${target.name} through a shared link.`,target.id,`Met ${creature.name} through a shared link.`]);
-  await recordAnalytics(client,playerId,creature.id,"player_encounter",{targetSlug});
+  await recordAnalytics(client,playerId,creature.id,"player_encounter",{targetRef});
   return { metName: target.name as string };
 }
 

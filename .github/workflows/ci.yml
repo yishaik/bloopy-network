@@ -123,3 +123,31 @@ jobs:
           path: delivery-runtime-db-smoke.log
       - if: steps.delivery_runtime_smoke.outcome == 'failure'
         run: cat delivery-runtime-db-smoke.log && exit 1
+      - id: account_smoke
+        continue-on-error: true
+        run: npm run test:account-db -w @bloopy/server > account-db-smoke.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: steps.account_smoke.outcome == 'failure'
+        with:
+          name: account-db-smoke-log
+          path: account-db-smoke.log
+      - if: steps.account_smoke.outcome == 'failure'
+        run: cat account-db-smoke.log && exit 1
+      # The runner ships a PostgreSQL 16 client, and pg_dump refuses to dump a newer server.
+      - name: Install a matching PostgreSQL client
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
+      # Proves the documented recovery path still works against the schema on this commit, so a
+      # migration can never quietly break restore between releases.
+      - name: Backup and restore drill
+        run: |
+          set -euo pipefail
+          PGPASSWORD=bloopy psql -h localhost -U bloopy -d postgres -c "CREATE DATABASE bloopy_restore_drill OWNER bloopy"
+          DUMP=$(DATABASE_URL="$DATABASE_URL" bash scripts/backup-database.sh ./backups | tail -1)
+          PGPASSWORD=bloopy RESTORE_URL="postgres://bloopy:bloopy@localhost:5432/bloopy_restore_drill" bash scripts/verify-restore.sh "$DUMP"

@@ -2,6 +2,8 @@
 
 This is the release gate for inviting additional testers while keeping unverified Telegram surfaces isolated.
 
+The ordered launch runbook is [`GO_LIVE.md`](GO_LIVE.md), and the Phase-1 roster, tester journey and stop conditions live in [`PHASE1_ALPHA.md`](PHASE1_ALPHA.md). This document remains the definition of the gates themselves.
+
 ## Phase 0 — automated release gate
 
 Required before any additional tester is invited:
@@ -9,7 +11,9 @@ Required before any additional tester is invited:
 - strict TypeScript passes;
 - unit tests and production build pass;
 - clean PostgreSQL migration passes;
-- memory, notification, OpenRouter, Telegram control-plane and delivery-runtime database smoke suites pass;
+- memory, notification, OpenRouter, Telegram control-plane, delivery-runtime and account-lifecycle database smoke suites pass;
+- the backup and restore drill passes;
+- `npm run release:check -- --base-url https://… --phase 1` passes with no skipped checks;
 - `/livez`, `/readyz` and `/health` pass in production;
 - no unexplained failed, uncertain or dead-letter queue rows;
 - `MANAGED_BOT_FLEET_ENABLED=false`;

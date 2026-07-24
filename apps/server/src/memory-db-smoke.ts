@@ -57,7 +57,7 @@ async function main() {
 
     let conflict=false;
     try { await completeDailyReturn(client,player.id,creature.id,firstDaily.id,"set_down"); }
-    catch(error) { conflict=error instanceof Error&&error.message.includes("already completed"); }
+    catch(error) { conflict=error instanceof Error&&error.message.includes("daily_already_completed"); }
     assert(conflict,"a different replayed choice did not conflict");
 
     await client.query("ROLLBACK");

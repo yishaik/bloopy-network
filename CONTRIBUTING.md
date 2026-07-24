@@ -9,58 +9,49 @@ Read:
 - [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md)
 - [`docs/BEHAVIOR_SPEC.md`](docs/BEHAVIOR_SPEC.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/API.md`](docs/API.md)
 - [`docs/CODE_STYLE.md`](docs/CODE_STYLE.md)
 - [`docs/TESTING.md`](docs/TESTING.md)
 
-Bloopy's core constraints are product rules, not optional implementation preferences:
+Core constraints are product rules:
 
-- deterministic canonical game state;
-- transactional/idempotent mutations;
-- owner-derived authorization;
-- safe external delivery through queues;
-- optional AI that cannot control rewards or state;
-- privacy boundaries between player and public creature identity;
-- staged feature flags for managed bots, bot-to-bot and matchmaking.
+- deterministic canonical state;
+- transactional/idempotent mutation;
+- server-derived ownership;
+- durable external delivery;
+- optional AI without reward/state authority;
+- explicit public/private data boundaries;
+- self-service export/reset/delete;
+- staged flags for managed bots, bot-to-bot and matchmaking;
+- verified release and restore procedures.
 
 ## Issues
 
-Use an issue for any change that affects:
-
-- player-visible behavior;
-- a new game mechanic or story system;
-- schema or migration behavior;
-- a Telegram or social flow;
-- privacy/security;
-- production configuration;
-- a substantial refactor.
+Use an issue for changes affecting player behavior, mechanics/story, schema, Telegram/social flows, privacy/security, production configuration or substantial architecture.
 
 An implementation issue should describe:
 
-- goal and player outcome;
-- current gap;
-- scope and non-scope;
+- player goal/current gap;
+- scope/non-scope;
 - data/API changes;
-- authorization and privacy boundaries;
-- idempotency/retry behavior;
-- failure states;
-- feature flags and rollout;
-- acceptance criteria;
-- test requirements;
+- auth/privacy boundaries;
+- idempotency/concurrency;
+- expected failure states;
+- flags/rollout/rollback;
+- acceptance and tests;
 - documentation changes.
 
-Before opening a new issue, search for overlapping roadmap, epic and bug issues.
+Search existing roadmap, epics and bugs before creating a duplicate.
 
 ## Branches
 
-Use a focused branch from current `main`.
-
-Recommended format:
+Start a focused branch from current `main`:
 
 ```text
 agent/<short-description>
 ```
 
-Keep unrelated work in separate branches and pull requests.
+Do not combine unrelated work.
 
 ## Local validation
 
@@ -71,7 +62,7 @@ npm test
 npm run build
 ```
 
-When database behavior changes:
+For database behavior:
 
 ```bash
 docker compose up postgres -d
@@ -81,117 +72,124 @@ npm run test:notifications-db -w @bloopy/server
 npm run test:openrouter-db -w @bloopy/server
 npm run test:telegram-control-db -w @bloopy/server
 npm run test:delivery-runtime-db -w @bloopy/server
+npm run test:account-db
 ```
 
-Run at least the affected smoke suite. CI runs all suites.
+For schema/release/recovery changes:
+
+```bash
+npm run verify:restore
+```
+
+After deployment, use the appropriate preflight:
+
+```bash
+ADMIN_API_KEY=… npm run release:check -- --base-url https://deployment.example --phase 1
+```
+
+CI runs all current smoke suites and the backup/restore drill.
 
 ## Pull requests
 
-Default to a draft PR while work is incomplete.
+Default to a draft PR while incomplete.
 
-A useful PR description includes:
+Describe:
 
-- what changed;
-- why it changed;
+- what and why;
 - player/developer impact;
-- migration and environment changes;
+- migration/environment changes;
 - security/privacy impact;
-- verification performed;
-- rollout and rollback;
+- validation performed;
+- rollout/rollback;
 - linked issues.
 
 ### PR checklist
 
-- [ ] scope is focused and linked to an issue where appropriate;
-- [ ] strict TypeScript passes;
-- [ ] unit tests pass;
-- [ ] production build passes;
-- [ ] clean migrations and affected DB smokes pass;
-- [ ] replay/double-submit behavior is safe;
-- [ ] concurrent behavior is tested where relevant;
-- [ ] cross-owner authorization is tested;
-- [ ] no secret/private fields appear in logs or responses;
-- [ ] AI failure leaves canonical behavior intact;
-- [ ] feature flags/metrics/rollback exist for risky behavior;
-- [ ] player, developer and operations docs are updated;
-- [ ] no unresolved review thread remains before merge.
+- [ ] focused scope;
+- [ ] typecheck, unit tests and build pass;
+- [ ] clean migration and affected DB smokes pass;
+- [ ] account lifecycle smoke passes when export/reset/delete or related schema changes;
+- [ ] restore drill passes for schema/recovery changes;
+- [ ] replay/concurrency behavior tested;
+- [ ] cross-owner authorization tested;
+- [ ] public/share/export field privacy tested;
+- [ ] AI failure leaves canonical state intact;
+- [ ] feature flag, metrics and rollback exist for risky behavior;
+- [ ] release/preflight tooling updated when needed;
+- [ ] player, API, developer and operations docs updated;
+- [ ] no unresolved review thread before merge.
 
 ## Review priorities
 
 Review in this order:
 
 1. canonical correctness;
-2. ownership and privacy;
-3. idempotency and concurrency;
-4. external-delivery failure behavior;
-5. player experience and accessibility;
-6. tests and operations;
-7. maintainability and formatting.
+2. ownership/privacy/account lifecycle;
+3. idempotency/concurrency;
+4. external-delivery behavior;
+5. player experience/accessibility;
+6. tests/release/recovery;
+7. maintainability/formatting.
 
-A visually correct flow is not safe to merge when retries can duplicate rewards or another owner can access it.
+A visually correct feature is unsafe if retries duplicate rewards, private fields leak, deletion leaves data behind or another owner can access it.
 
 ## Migrations
 
-- Never rename or edit an already applied migration.
-- Use a new unique ordered migration file.
+- Never rename/edit an applied migration.
+- Use a new unique ordered file.
 - Prefer additive changes.
-- Backfill before enforcing constraints.
-- Add indexes and state constraints deliberately.
-- Document release-critical migration expectations.
-- Production rollback keeps additive schema and redeploys prior code.
+- Backfill before constraints.
+- Add indexes/checks deliberately.
+- Update readiness and release ledger expectations.
+- Verify backup/restore.
+- Production rollback retains additive schema and redeploys prior code.
+
+## Public sharing and account lifecycle
+
+For public share/export work:
+
+- use opaque public tokens;
+- select public/export fields explicitly;
+- never return whole rows and filter known secrets afterward;
+- test invalid/old links and seeded secret values;
+- invalidate old creature share identity after reset.
+
+For reset/delete:
+
+- require explicit confirmation;
+- revoke external managed bots before removing registry authorization;
+- clean non-FK/raw identity-bearing records;
+- anonymize only documented retained security history;
+- test repeated deletion and fresh bootstrap after reset.
 
 ## Game content
 
-For a new action, quest or arc:
-
-- define canonical prerequisites/effects;
-- provide deterministic fallback narration;
-- use stable IDs;
-- keep rewards bounded;
-- test every branch and replay;
-- preserve tone from `GAME_DESIGN.md`;
-- avoid hidden AI authority.
+New actions, quests and arcs must define deterministic prerequisites/effects, stable IDs, bounded rewards, fallback narration and replay tests while preserving [`GAME_DESIGN.md`](docs/GAME_DESIGN.md).
 
 ## Telegram and social changes
 
-Any Telegram/social PR must specify:
+Specify:
 
-- authenticated actor and owner;
-- consent model;
-- update and command idempotency;
-- outbox/delivery behavior;
-- rate limits and budgets;
-- private/public response fields;
+- authenticated actor/owner;
+- consent;
+- update/command idempotency;
+- durable outbox behavior;
+- limits/budgets;
+- public/private fields;
+- block/report where strangers are involved;
 - kill switch;
-- production E2E gate with real accounts/bots.
+- real-account/bot E2E gate.
 
 Do not enable a risky flag merely because code merged.
 
 ## Security reporting
 
-Do not open a public issue containing:
-
-- bot tokens;
-- webhook secrets;
-- API keys;
-- Telegram initData;
-- OAuth verifier/state;
-- decrypted credentials;
-- private user messages or media.
+Never put tokens, secrets, API keys, initData, OAuth verifier/state, decrypted credentials or private messages/media in a public issue or PR.
 
 Disable the narrowest affected feature and use a private owner/operator channel for sensitive evidence.
 
 ## Documentation
 
-Update docs in the same PR when a change modifies:
+Update documentation in the same PR for player behavior, game design, endpoint/response models, persistence/idempotency, public/export/privacy fields, consent, flags, tests, release gates, backup/restore or operations.
 
-- player behavior;
-- game tone or design rules;
-- an endpoint or response model;
-- persistence/idempotency rules;
-- privacy or consent;
-- flags or environment variables;
-- testing/release gates;
-- operations and recovery.
-
-Mark planned behavior clearly. Do not document a planned feature as shipped.
+Mark planned behavior clearly; never present it as shipped.

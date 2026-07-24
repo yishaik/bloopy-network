@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { db } from "./db.js";
 import { open } from "./crypto.js";
+import { saveAIProfile } from "./game.js";
 import {
   beginOpenRouterConnection,
   claimOpenRouterState,
@@ -23,6 +23,7 @@ async function main() {
   const client=await db.connect();
   const originalFetch=globalThis.fetch;
   const plainKey="sk-or-v1-smoke-secret-that-must-never-be-returned";
+  const manualKey="sk-or-v1-manual-smoke-secret";
   try {
     await client.query("BEGIN");
     const telegramId=Number(`7${String(Date.now()).slice(-9)}`);
@@ -89,11 +90,15 @@ async function main() {
     const activeAgain=await recordOpenRouterVerification(client,player.id,keyInfo);
     assert(activeAgain.connected&&activeAgain.status==="active","successful reverification did not reactivate the profile");
 
-    await client.query(`UPDATE ai_profiles SET base_url='https://manual.example/v1',model='manual-model',encrypted_api_key=$2 WHERE player_id=$1`,[player.id,"cipher-placeholder"]);
-    const manual=await client.query(`SELECT source,external_user_id,connection_status,connection_metadata FROM ai_profiles WHERE player_id=$1`,[player.id]);
-    assert(manual.rows[0].source==="manual"&&manual.rows[0].external_user_id===null&&manual.rows[0].connection_status==="active","manual profile trigger did not clear OpenRouter metadata");
+    await saveAIProfile(client,player.id,{baseUrl:"https://openrouter.ai/api/v1",model:"manual-openrouter-model",apiKey:manualKey});
+    const manual=await client.query(`SELECT source,external_user_id,connection_status,connection_metadata,encrypted_api_key FROM ai_profiles WHERE player_id=$1`,[player.id]);
+    assert(manual.rows[0].source==="manual"&&manual.rows[0].external_user_id===null&&manual.rows[0].connection_status==="active","manual save did not clear OpenRouter metadata");
+    assert(JSON.stringify(manual.rows[0].connection_metadata)==="{}","manual save retained OAuth connection metadata");
+    assert(open(String(manual.rows[0].encrypted_api_key))===manualKey,"manual credential was not encrypted through the production save path");
 
-    await client.query(`UPDATE ai_profiles SET base_url='https://openrouter.ai/api/v1',source='openrouter',encrypted_api_key=$2,connection_status='active' WHERE player_id=$1`,[player.id,stored.rows[0].encrypted_api_key]);
+    await client.query(`UPDATE ai_profiles SET base_url='https://openrouter.ai/api/v1',source='openrouter',external_user_id='user-smoke',encrypted_api_key=$2,connection_status='active',connection_metadata=$3 WHERE player_id=$1`,[
+      player.id,stored.rows[0].encrypted_api_key,JSON.stringify({mode:"creative",keyInfo})
+    ]);
     const disconnected=await disconnectOpenRouter(client,player.id);
     assert(disconnected,"disconnect did not remove the OpenRouter profile");
     const afterDisconnect=await getOpenRouterConnection(client,player.id);

@@ -86,6 +86,15 @@ Checks PostgreSQL and returns the application version, read from `apps/server/pa
 
 Probes all three endpoints plus the admin metrics and reports pass/fail per gate-A check. See [`GO_LIVE.md`](GO_LIVE.md).
 
+### Human verification gates
+
+`npm run verify:gate -- --base-url https://… --gate b|c`
+
+Walks the #17 gate-B and gate-C steps one at a time and asserts each consequence against production state, then prints a non-secret evidence block. Backed by two admin routes:
+
+- `GET /api/admin/verification` — read-only managed-bot, security-event, interaction and ingress state. Returns no token, webhook secret, Telegram user id or message content.
+- `POST /api/admin/verification/replay-update` — re-offers an already-received update to the ingress, as a Telegram retry would. Safe by construction: `telegram_updates` is keyed on `(source, update_id)`, so a correct system inserts nothing and reports `deduplicated: true`.
+
 ## Runtime controls
 
 The environment variables are boot-time kill switches:

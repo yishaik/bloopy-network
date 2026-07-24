@@ -16,7 +16,8 @@
     "test:account-db": "npm run test:account-db -w @bloopy/server",
     "release:check": "node scripts/release-check.mjs",
     "backup": "bash scripts/backup-database.sh",
-    "verify:restore": "bash scripts/verify-restore.sh"
+    "verify:restore": "bash scripts/verify-restore.sh",
+    "verify:gate": "node scripts/verify-gate.mjs"
   },
   "engines": {
     "node": ">=22"

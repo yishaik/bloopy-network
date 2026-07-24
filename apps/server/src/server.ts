@@ -37,6 +37,7 @@ import { buildStory } from "./story.js";
 import { listOwnedManagedBots, setManagedBotInteractionConsent, upsertManagedBotAccessRule } from "./telegram-control.js";
 import { configureManagerWebhook, managedBotCreationLink, migrateManagedWebhooks, revokeManagedBot, rotateManagedBotToken, startBotConversation, type TelegramUpdate } from "./telegram.js";
 import type { AvatarGenome, StoryCard } from "./types.js";
+import { replayProcessedUpdate, verificationSnapshot } from "./verification.js";
 import { SERVICE_NAME, SERVICE_VERSION } from "./version.js";
 import { cleanupProcessedWork, processDueEvents } from "./worker.js";
 
@@ -195,6 +196,11 @@ app.get("/api/admin/outbox/problems",async(request,reply)=>{if(!isAdmin(request.
 app.post("/api/admin/outbox/:id/replay",async(request,reply)=>{if(!isAdmin(request.headers))return reply.code(401).send({error:"unauthorized"});const params=z.object({id:z.string().uuid()}).parse(request.params);return {replayed:await withTransaction((client)=>replayOutboxItem(client,params.id,"admin_api"))};});
 app.post("/api/admin/runtime/controls/:key",async(request,reply)=>{if(!isAdmin(request.headers))return reply.code(401).send({error:"unauthorized"});const params=z.object({key:z.enum(["telegram_ingress","outbox_delivery","risky_mutations"])}).parse(request.params);const body=z.object({enabled:z.boolean(),reason:z.string().max(300).nullable().default(null)}).parse(request.body);await withTransaction((client)=>setRuntimeControl(client,params.key as RuntimeControlKey,body.enabled,body.reason,"admin_api"));return {ok:true};});
 app.post("/api/admin/runtime/recover",async(request,reply)=>{if(!isAdmin(request.headers))return reply.code(401).send({error:"unauthorized"});return recoverExpiredLeases();});
+
+// Human verification gates (#17). Read-only state plus one safe probe, consumed by
+// `npm run verify:gate`. Neither route exposes a token, webhook secret, Telegram user id or message.
+app.get("/api/admin/verification",{config:{rateLimit:{max:60,timeWindow:"1 minute"}}},async(request,reply)=>{if(!isAdmin(request.headers))return reply.code(401).send({error:"unauthorized"});const query=z.object({windowMinutes:z.coerce.number().int().min(1).max(1440).default(60)}).parse(request.query);return withTransaction((client)=>verificationSnapshot(client,query.windowMinutes));});
+app.post("/api/admin/verification/replay-update",{config:{rateLimit:{max:20,timeWindow:"1 minute"}}},async(request,reply)=>{if(!isAdmin(request.headers))return reply.code(401).send({error:"unauthorized"});const body=z.object({source:z.string().min(1).max(60),updateId:z.coerce.number().int()}).parse(request.body);return withTransaction((client)=>replayProcessedUpdate(client,body.source,body.updateId));});
 
 async function enqueueWebhook(source:string,update:TelegramUpdate){if(typeof update?.update_id!=="number")return {ok:true,queued:false};const queued=await withTransaction((client)=>enqueueTelegramUpdate(client,source,update));return {ok:true,queued};}
 app.post("/telegram/manager",{config:{rateLimit:{max:300,timeWindow:"1 minute"}}},async(request,reply)=>{if(!secureEquals(request.headers["x-telegram-bot-api-secret-token"],config.TELEGRAM_WEBHOOK_SECRET))return reply.code(401).send({ok:false});return enqueueWebhook("manager",request.body as TelegramUpdate);});

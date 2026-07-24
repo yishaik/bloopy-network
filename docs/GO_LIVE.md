@@ -4,7 +4,9 @@ The single sequence from a deployed build to real players. It gathers the releas
 [`docs/OPERATIONS.md`](OPERATIONS.md), [`docs/ALPHA_TESTING.md`](ALPHA_TESTING.md) and issue #17 into
 one ordered runbook, and replaces the manual parts of gate A with a command.
 
-Nothing here mutates production. Every check reads.
+Every check here reads, with one deliberate exception: the gate-B duplicate-webhook probe re-offers
+an already-received update to the ingress, exactly as a Telegram retry would. A correct system
+inserts nothing — that is the property under test.
 
 ---
 
@@ -90,20 +92,37 @@ BOT_TO_BOT_ENABLED=false
 
 ```bash
 ADMIN_API_KEY=… npm run release:check -- --base-url https://your-deployment --phase 2
+ADMIN_API_KEY=… npm run verify:gate    -- --base-url https://your-deployment --gate b
 ```
 
-Then verify by hand, because none of this can be proven without a real Telegram account:
+The **actions** stay manual — they need real Telegram accounts — but `verify:gate` walks you through
+them one at a time and *asserts the consequence in production state* after each, so a gate is passed
+by a check rather than by someone deciding the screen looked right. It covers:
 
-- [ ] owner private chat accepted;
-- [ ] non-owner rejected, with no private state leaked in the rejection;
-- [ ] owner group access rejected *before* an allowlist rule exists;
-- [ ] an approved group rule works, and saving it twice still leaves exactly one rule;
-- [ ] a duplicate webhook delivery produces one canonical effect and one reply;
-- [ ] token rotation invalidates the previous token and restores the webhook;
-- [ ] revoke disables webhook access and the bot;
-- [ ] queue health still clean afterwards (re-run the preflight).
+- owner private chat accepted, producing exactly one canonical effect and one reply;
+- non-owner rejected, with the rejection recorded as a security event;
+- owner group access rejected *before* an allowlist rule exists;
+- an approved group rule works, and saving it twice still leaves exactly one enabled rule;
+- **a duplicate webhook produces one canonical effect and one reply** — the runner re-offers the
+  update to the ingress exactly as a Telegram retry would, which is the one check nobody can perform
+  by hand. A correct system inserts nothing;
+- token rotation increments the token version and restores the webhook;
+- revoke disables the bot, sets `revoked_at` and clears meeting consent;
+- queue health is still clean afterwards.
 
-Keep the fleet enabled for a small group only after every box is ticked.
+It ends by printing a non-secret evidence block to paste into #17. A step you skip is reported as
+skipped and the gate does not pass — "not checked" never counts as "checked".
+
+Re-check a gate later without redoing the actions:
+
+```bash
+ADMIN_API_KEY=… npm run verify:gate -- --base-url https://… --gate b --bot <BOT_ID> --assert-only
+```
+
+Assert-only reports the delta-based steps (rejections, rotation) as skipped, because they compare
+state around your action and there is no action to compare around.
+
+Keep the fleet enabled for a small group only after every step passes.
 
 ---
 
@@ -118,16 +137,22 @@ BOT_TO_BOT_ENABLED=true
 
 ```bash
 ADMIN_API_KEY=… npm run release:check -- --base-url https://your-deployment --phase 3
+ADMIN_API_KEY=… npm run verify:gate    -- --base-url https://your-deployment --gate c
 ```
 
-- [ ] a meeting is blocked until both owners consent;
-- [ ] a signed meeting completes within the turn budget;
-- [ ] a copied or altered envelope is rejected;
-- [ ] stale, repeated and out-of-order turns do not advance state;
-- [ ] an expired interaction cannot continue;
-- [ ] pair and owner budgets are enforced;
-- [ ] flipping the kill switch blocks new interactions immediately;
-- [ ] no model output grants canonical rewards or state.
+The runner asserts, after each manual action:
+
+- a meeting is blocked until both owners consent — and no interaction row is created;
+- a signed meeting reaches `completed` with recorded turns exactly equal to the turn budget;
+- a copied or altered envelope is rejected, recorded as a security event, and advances no turn;
+- pair and owner budgets refuse further meetings;
+- flipping the kill switch creates no further interaction.
+
+Two properties are not machine-checkable and stay a human judgement:
+
+- [ ] an expired interaction cannot continue (needs a wait past the TTL);
+- [ ] no model output grants canonical rewards or state — read a completed exchange and confirm
+      every reward came from the deterministic engine.
 
 Close #17 once gates A, B and C have passed with non-secret production evidence.
 

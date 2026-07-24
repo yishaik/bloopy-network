@@ -2,18 +2,20 @@
 
 ## Testing philosophy
 
-Bloopy is a persistent game connected to Telegram and optional external AI. A successful test strategy must prove more than happy-path HTTP responses.
+Bloopy is a persistent game connected to Telegram, PostgreSQL and optional external AI. Tests must prove more than happy-path HTTP responses.
 
-Tests should verify:
+Validate:
 
 - deterministic rules;
 - transactional state changes;
 - replay and concurrency safety;
 - owner authorization;
-- privacy-safe responses;
-- asynchronous lifecycle recovery;
-- deterministic fallback when external services fail;
-- production behavior with real Telegram resources before risky flags are enabled.
+- privacy-safe public/export responses;
+- account lifecycle cleanup;
+- asynchronous recovery;
+- deterministic fallback on external failure;
+- release recoverability;
+- real Telegram behavior before risky flags are enabled.
 
 ## Required validation layers
 
@@ -23,7 +25,7 @@ Tests should verify:
 npm run typecheck
 ```
 
-Strict TypeScript is a merge gate. Do not suppress an error with `any` or unsafe casts when the real problem is an unclear contract.
+Strict TypeScript is a merge gate. Do not hide unclear contracts with `any`.
 
 ## 2. Unit tests
 
@@ -31,19 +33,22 @@ Strict TypeScript is a merge gate. Do not suppress an error with `any` or unsafe
 npm test
 ```
 
-Unit tests should cover:
+Unit coverage should include:
 
-- parsers and validators;
-- moderation and normalization;
+- parsers/validators;
+- moderation/normalization;
+- onboarding and deterministic progression;
 - story-arc resolution;
-- onboarding and state rules;
-- avatar/genome behavior;
-- Telegram initData and interaction-envelope verification;
-- AI catalog/policy decisions;
-- timezone and quiet-hour calculations;
-- deterministic fallback content.
+- avatar/card rendering;
+- share summaries and token-safe behavior;
+- referral rules;
+- export schemas and confirmation parsing;
+- Telegram initData and signed envelopes;
+- AI policy/catalog/fallback;
+- timezone/quiet hours;
+- release-check parsing and failure paths.
 
-Unit tests should not require production credentials or external network access.
+No production credential or external network dependency belongs in unit tests.
 
 ## 3. Production build
 
@@ -51,29 +56,26 @@ Unit tests should not require production credentials or external network access.
 npm run build
 ```
 
-The build is required even when type checking passes because runtime ESM output and static assets are part of the deployable product.
+Required because ESM output and static Mini App/share assets are part of the deployable product.
 
-## 4. Clean migration test
+## 4. Clean migration
 
 ```bash
 docker compose up postgres -d
 npm run migrate
 ```
 
-A migration change must be tested from a clean PostgreSQL database.
+Migration rules:
 
-Also test upgrade assumptions when the migration backfills or constrains existing rows.
+- immutable filenames after release;
+- additive/forward-safe schema;
+- backfill before restrictive constraints;
+- earlier application code remains compatible where rollback requires it;
+- readiness/release checks update when running code depends on a new migration.
 
-Rules:
-
-- migration filenames are immutable after release;
-- migrations are additive and forward-safe;
-- prior application versions should tolerate additive schema where rollback requires it;
-- readiness expectations must be updated when a migration becomes release-critical.
+For release 0.12, migration/account-lifecycle behavior includes opaque share tokens, referral/account lifecycle tables and cleanup invariants.
 
 ## 5. Database smoke suites
-
-Current suites:
 
 ```bash
 npm run test:memory-db -w @bloopy/server
@@ -81,21 +83,40 @@ npm run test:notifications-db -w @bloopy/server
 npm run test:openrouter-db -w @bloopy/server
 npm run test:telegram-control-db -w @bloopy/server
 npm run test:delivery-runtime-db -w @bloopy/server
+npm run test:account-db
 ```
 
-A DB smoke test is appropriate when behavior depends on:
+Use DB smoke tests for unique constraints, transactions, locks, ownership joins, command keys, queue leases, lifecycle transitions, cascades/non-FK cleanup and concurrent requests.
 
-- unique constraints;
-- transactions;
-- row/advisory locks;
-- ownership joins;
-- idempotency keys;
-- queue claims and leases;
-- lifecycle transitions;
-- cascade/delete behavior;
-- concurrent requests.
+The account suite must cover at least:
 
-Use a transaction for test setup/cleanup where possible. When committed rows are required to test workers, use unique test identifiers and explicit cleanup.
+- export allowlist and secret exclusion;
+- managed-bot revoke coordination;
+- reset removes creature-scoped state and permits fresh bootstrap;
+- reset creates a new generation/share identity;
+- old share links do not target the replacement;
+- deletion removes credentials/private state;
+- raw/non-FK identity-bearing data is cleaned;
+- retained security history is anonymized as designed;
+- repeated deletion is idempotent and does not recreate the account.
+
+## 6. Backup and restore drill
+
+```bash
+npm run verify:restore
+```
+
+The drill should:
+
+- refuse production targets;
+- use compatible PostgreSQL client/server versions;
+- create a backup;
+- restore into an isolated database;
+- verify the migration ledger;
+- verify core tables and seeded world;
+- confirm rerunning migrations is a no-op.
+
+Schema changes must not merge when the documented recovery path is broken.
 
 ## CI pipeline
 
@@ -107,219 +128,214 @@ GitHub Actions runs:
 4. production build;
 5. PostgreSQL service;
 6. clean migrations;
-7. all database smoke suites.
+7. all six DB smoke suites;
+8. backup/verified restore drill.
 
-Failed typecheck/test/smoke logs are uploaded as artifacts.
+Failure logs are uploaded as artifacts where configured.
 
-CI intentionally enables managed-bot and bot-to-bot flags for automated coverage. That does not mean those flags should automatically be enabled in production.
+CI enables managed-bot/bot-to-bot flags for automated control-plane coverage. That does not enable them in production.
 
-## Test matrix by change type
+## Test matrix
 
-| Change | Minimum required validation |
+| Change | Minimum validation |
 |---|---|
-| Documentation only | link/content review; CI should remain unaffected |
+| Documentation only | link/content review; normal CI |
 | Pure utility/parser | typecheck, unit tests |
-| UI state/copy | typecheck/build, component or browser checks where available, mobile viewport review |
-| Canonical action/reward | unit tests, DB replay test, concurrency test if relevant |
-| Migration | clean migration, affected DB smoke, upgrade/backfill review |
-| Telegram flow | signature/auth tests, ingress dedup, outbox delivery classification, production gate |
-| Managed-bot ownership | cross-owner negative tests, revoke/rotation tests, real one-bot verification |
-| Bot-to-bot flow | two-owner DB smoke, replay/forgery/TTL/budget tests, real two-bot verification |
-| Matchmaking | two-worker matching race, block/cooldown/expiry tests, 4-account E2E |
-| AI narration | fallback, timeout, budget, prompt boundary, moderation and leakage tests |
-| Media processing | type/size/timeout, injection, privacy, retention, provider failure and moderation tests |
-| Operations/runtime | readiness, control transition, lease recovery, rollback documentation |
+| UI state/copy | typecheck/build, browser/component checks, narrow viewport |
+| Canonical reward/action | unit + DB replay + concurrency where relevant |
+| Migration | clean migration, affected DB smoke, restore drill, upgrade review |
+| Public share/card | rendering tests, token privacy, invalid/old token, injection safety |
+| Referral | attribution/payout replay, reset/delete abuse, concurrent completion |
+| Export | explicit field allowlist, known-secret/name exclusion, no-store headers |
+| Reset/delete | account DB smoke, external revoke failure tolerance, orphan cleanup, repeated call |
+| Telegram flow | auth/signature, ingress dedup, delivery classification, production gate |
+| Managed-bot ownership | cross-owner negative, revoke/rotation, one-bot E2E |
+| Bot-to-bot | two-owner DB smoke, replay/forgery/TTL/budget, two-bot E2E |
+| Matchmaking | atomic two-worker race, blocks/cooldown/expiry, four-account E2E |
+| AI narration | fallback, timeout, budget, prompt boundary, moderation/leakage |
+| Media | type/size/timeout, injection, privacy, retention/provider failure |
+| Operations | readiness, runtime controls, leases, release check, rollback |
 
 ## Replay testing
 
-Every retryable mutation should be tested at least twice with the same logical command.
+Run every retryable mutation twice with the same logical command and assert no duplicate:
 
-Assert that repeated execution does not duplicate:
-
-- XP;
-- stars;
-- items;
+- XP/stars/items;
 - quest completion;
-- relationship edges;
-- story entries;
-- memories;
+- relationship/story/memory;
 - notifications;
-- invitations;
-- meetings;
-- analytics that represent a canonical event.
+- referral payout;
+- invitations/meetings/matches;
+- account lifecycle event;
+- canonical analytics.
 
-When the API promises a replay result, assert that the response is stable or clearly marked as replayed.
+When the API promises replay behavior, return stable existing state or an explicit replay marker.
 
 ## Concurrency testing
 
-Use concurrent transactions or requests for operations where races matter:
+Test concurrent:
 
-- bootstrap;
-- action spending energy;
+- bootstrap/onboarding completion;
+- energy spending;
 - shop purchase;
-- story choice;
-- daily return completion;
+- story/daily-return choice;
+- referral payout;
 - invitation acceptance/start;
 - matchmaking claims;
-- token rotation/revoke;
-- queue worker claims.
+- token rotate/revoke;
+- queue worker claims;
+- reset/delete versus active operations where relevant.
 
-Assert one canonical winner and a safe result for every loser/retry.
+Assert one canonical winner and safe behavior for all other attempts.
 
 ## Authorization testing
 
-For every owner-scoped resource, test:
+For every owner-scoped resource:
 
-- owner can read/write the intended fields;
-- another owner cannot read it;
-- another owner cannot mutate it;
-- changing a client-supplied identifier does not bypass ownership;
-- disabled/revoked resources stay inaccessible;
-- response shape does not leak private owner data.
+- owner can perform intended action;
+- another owner cannot read/mutate;
+- client identifier substitution fails;
+- disabled/revoked resources remain inaccessible;
+- response does not leak private owner data.
+
+Account export/reset/delete must always derive the account from authenticated Telegram context.
 
 ## Privacy-contract testing
 
-Player/API responses must not include:
+Assert player/public/export responses exclude:
 
-- encrypted or plaintext API keys;
-- bot tokens;
-- webhook secrets;
-- Telegram initData;
-- OAuth verifier or raw state;
-- internal HMAC signatures;
+- plaintext and encrypted API keys;
+- bot tokens/webhook secrets;
+- initData;
+- OAuth state/verifier;
+- HMAC signatures;
 - another owner's Telegram ID;
-- raw operational queue payloads;
-- private memories outside the authenticated player's scope.
+- raw queue/security payloads;
+- private memories outside scope.
 
-Add explicit assertions against sensitive field names for new public response models.
+For exports, assert both sensitive field names and seeded known-secret values are absent. Explicitly listing export columns is safer than `SELECT *` plus filtering.
+
+Public share tests should confirm the token does not encode the owner identity and only the declared public view is rendered.
 
 ## AI testing
 
-Test both AI and fallback paths.
+Cover:
 
-Required cases:
-
-- no profile connected;
-- provider disabled;
+- no profile/provider disabled;
 - budget exhausted;
-- timeout;
-- provider 4xx/5xx;
-- malformed output;
-- moderated output;
-- prompt-injection-like memory/content;
-- valid enriched output;
-- canonical state identical regardless of narration success.
+- timeout/4xx/5xx;
+- malformed or moderated output;
+- prompt-injection-like content;
+- valid enrichment;
+- identical canonical state regardless of narration success.
 
-Narrative evaluation should assess:
-
-- voice consistency;
-- factual adherence;
-- brevity;
-- safety;
-- absence of invented rewards/choices;
-- quality relative to deterministic fallback.
+Evaluate voice consistency, factual adherence, brevity, safety, no invented rewards/choices and quality relative to fallback.
 
 ## Telegram delivery testing
 
-Test lifecycle classifications:
+Cover:
 
-- success records message ID;
+- success records Telegram message ID;
 - `429` respects retry-after;
-- known permanent `4xx` dead-letters;
+- permanent `4xx` dead-letters;
 - `5xx` retries with bounds;
 - timeout/network ambiguity becomes uncertain;
 - expired sending lease becomes uncertain;
-- manual replay is explicit and audited;
-- pausing/resuming delivery preserves queued work.
+- manual replay is explicit/audited;
+- pause/resume preserves work.
 
-Never assert automatic retry for uncertain Telegram delivery.
+Never expect automatic replay of uncertain sends.
 
-## Story-arc testing
+## Story testing
 
-For each arc, test:
+For each arc:
 
 - activation prerequisites;
-- every legal branch;
+- every branch;
 - illegal/stale choice rejection;
 - route inheritance;
-- reward exactly once;
+- reward once;
 - quest integration;
-- refresh/resume;
-- completion state;
-- deterministic fallback;
-- optional AI update cannot alter canonical result.
+- resume/completion;
+- fallback;
+- AI cannot alter canonical result.
 
 ## Frontend testing
 
-Player-facing flows should cover:
+Cover loading, empty, disabled, success, typed error, outage, double tap, refresh, narrow Telegram viewport, large text, keyboard/screen-reader behavior and reduced motion.
 
-- loading;
-- empty state;
-- disabled feature;
-- normal success;
-- typed domain error;
-- offline/temporary outage;
-- double tap;
-- refresh/resume;
-- narrow Telegram viewport;
-- large text;
-- keyboard and screen-reader semantics;
-- reduced motion.
+For destructive account flows, test confirmation, cancellation, post-reset state and post-deletion no-op behavior.
 
-For meeting/matchmaking flows, both owners should see consistent state.
+For meeting/matchmaking, both owners must see consistent state without private identity leakage.
+
+## Release preflight
+
+After deployment run:
+
+```bash
+ADMIN_API_KEY=… npm run release:check -- --base-url https://deployment.example --phase 1
+```
+
+The check must fail on:
+
+- wrong release version;
+- missing migration ledger entries;
+- flags inconsistent with rollout phase;
+- failed/uncertain/dead-letter queue work;
+- unhealthy liveness/readiness/health;
+- required verification reported as skipped.
+
+`SKIP` is never equivalent to `PASS`.
+
+Use `npm run verify:gate` for the documented human-verification probe where applicable.
 
 ## Production verification
 
-Automated tests cannot prove Telegram resource ownership, BotFather configuration, webhook behavior or real delivery semantics.
+Automated tests cannot prove BotFather configuration, ownership or real Telegram delivery.
 
-Use staged production gates from [Alpha testing](./ALPHA_TESTING.md):
+Follow [Alpha testing](./ALPHA_TESTING.md):
 
-- Phase 1: core game with risky bot surfaces off;
-- Phase 2: one real managed bot;
-- Phase 3: two owners and two bots for bot-to-bot;
-- later matchmaking: at least four real accounts for concurrent pairing/no-repeat behavior.
+- Phase 1 core game with risky bot surfaces off;
+- Phase 2 one real managed bot;
+- Phase 3A two-owner protocol;
+- Phase 3B player-facing direct meeting flow;
+- Phase 4 at least four accounts for stranger matching.
 
-Production evidence must be non-secret.
+Evidence must remain non-secret.
 
-## Bug regression tests
+## Regression tests
 
-A bug fix should include a test that fails before the fix when practical.
-
-Name the behavior, not the issue number alone.
+A fix should add a behavior-named test that fails before the fix when practical.
 
 Good:
 
 ```ts
-it("does not grant the daily reward twice after a repeated choice", ...)
+it("does not grant the referral twice after creature reset", ...)
 ```
 
-Weak:
-
-```ts
-it("fixes #123", ...)
-```
+Avoid tests named only after issue numbers.
 
 ## Release checklist
 
 Before merge:
 
-- [ ] typecheck passes;
-- [ ] unit tests pass;
-- [ ] build passes;
-- [ ] migrations pass from clean DB when relevant;
-- [ ] affected smoke suites pass;
-- [ ] replay and concurrency risks are tested;
+- [ ] typecheck, unit tests and build pass;
+- [ ] clean migrations pass when relevant;
+- [ ] affected/all DB smoke suites pass;
+- [ ] backup/restore drill passes for schema/release changes;
+- [ ] replay/concurrency tested;
 - [ ] authorization/privacy negative tests exist;
-- [ ] docs and flags are updated;
-- [ ] no unresolved review thread remains.
+- [ ] public/export response contracts tested;
+- [ ] docs/flags/release tooling updated;
+- [ ] no unresolved review thread.
 
 After deployment:
 
-- [ ] exact tested commit is deployed;
+- [ ] exact tested commit deployed;
 - [ ] expected migrations applied once;
-- [ ] `/livez` is healthy;
-- [ ] `/readyz` is ready;
-- [ ] `/health` reports expected version;
+- [ ] `/livez`, `/readyz`, `/health` healthy;
+- [ ] `release:check` passes with no skips;
 - [ ] metrics show no unexplained failed/uncertain/dead-letter work;
-- [ ] risky flags match the rollout phase;
-- [ ] a player journey smoke test passes.
+- [ ] risky flags match phase;
+- [ ] relevant player journey smoke passes;
+- [ ] backup/restore procedure remains verified.

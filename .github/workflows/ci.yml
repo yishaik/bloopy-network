@@ -6,7 +6,8 @@ on:
 
 env:
   DATABASE_URL: postgres://bloopy:bloopy@localhost:5432/bloopy
-  APP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  # CI-only key; never used outside workflows
+  APP_ENCRYPTION_KEY: NPqzBcDWPKtbd03eoulJ6pE0kPNeLcOAkPNgU2KcmtE=
   DEMO_MODE: "true"
   PUBLIC_BASE_URL: http://localhost:3000
   TELEGRAM_MANAGER_BOT_TOKEN: ci-fake-manager-token

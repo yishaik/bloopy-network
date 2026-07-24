@@ -34,7 +34,7 @@
       <section class="hero card">
         <div><p class="eyebrow">BLOOPY NETWORK</p><h1 id="creature-name">Waking up…</h1><p id="mood-line">A tiny world is assembling itself.</p></div>
         <div class="avatar-wrap"><img id="avatar" alt="Your creature"></div>
-        <div class="stats"><span>⚡ <b id="energy">–</b></span><span>✦ <b id="level">–</b></span><span>XP <b id="xp">–</b></span></div>
+        <div class="stats"><span>⚡ <b id="energy">–</b></span><span>✦ <b id="level">–</b></span><span>XP <b id="xp">–</b></span><span>⭐ <b id="stars">–</b></span></div>
       </section>
 
       <section id="daily-return" class="daily-card card" hidden>
@@ -61,6 +61,21 @@
       <section id="memories-card" class="card">
         <div class="section-head"><div><h2>What Bloopy remembers</h2><p class="section-copy">Only active memories can shape future callbacks. Personal memories can be corrected or removed.</p></div><span id="memory-count" class="pill"></span></div>
         <div id="memory-list" class="memory-list"></div><p id="memory-empty" class="empty-state" hidden>No lasting memories yet.</p>
+      </section>
+
+      <section id="quests-card" class="card" hidden>
+        <div class="section-head"><h2>Small promises</h2><span class="pill">quests</span></div>
+        <div id="quest-list" class="inventory-grid"></div>
+      </section>
+
+      <section id="shop-card" class="card" hidden>
+        <div class="section-head"><h2>Momo's stall</h2><span class="pill">spend stars</span></div>
+        <div id="shop-list" class="inventory-grid"></div>
+      </section>
+
+      <section id="relationships-card" class="card" hidden>
+        <div class="section-head"><h2>Friends so far</h2><span class="pill">relationships</span></div>
+        <div id="relationship-list" class="inventory-grid"></div>
       </section>
 
       <section class="card"><div class="section-head"><h2>What happened</h2><button id="share" class="quiet">Share</button></div><div id="story-feed" class="feed"></div></section>
@@ -130,7 +145,6 @@
   </dialog>
 
   <div id="toast" role="status"></div>
-  <script type="module" src="/app.js"></script>
-  <script type="module" src="/openrouter.js"></script>
+  <script type="module" src="/bootstrap.js"></script>
 </body>
 </html>

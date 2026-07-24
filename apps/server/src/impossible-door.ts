@@ -1,3 +1,4 @@
+import { AppError } from "./errors.js";
 import type { StoryCard, StoryChoice } from "./types.js";
 
 export const IMPOSSIBLE_DOOR_ARC_ID="impossible-door";
@@ -66,14 +67,14 @@ function routeLabel(route:DoorRoute|null):string {
   return "nobody sensible";
 }
 
-function doorResponse(state:DoorStoryState,creatureName:string):DoorBeatView {
+function doorResponse(state:DoorStoryState,creatureName:string,route:DoorRoute|null):DoorBeatView {
   if(state.doorAction==="seal") return {
     id:"door_reacts",chapter:6,totalChapters:9,aiEligible:true,
     canonicalFacts:["The player chose to seal the impossible door.","The bent key is vibrating.",`${creatureName} is holding the line.`],
     allowedReferences:[creatureName,"Dr. Sock","red thread","bent key","impossible door"],
     story:story("The door objects to procedure",`${creatureName} presses the bent key against the frame. Red light crawls around the door like a signature being written by an angry spider. Something on the other side pushes back.`,[
       choice("hold_seal","Hold the seal together"),
-      choice("call_partner",`Call ${routeLabel(null)} for help anyway`)
+      choice("call_partner",`Call ${routeLabel(route)} for help anyway`)
     ],8)
   };
   if(state.doorAction==="listen") return {
@@ -247,7 +248,7 @@ export function buildImpossibleDoorBeat(beatId:string,creatureName:string,route:
         choice("listen_door","Listen through it first")
       ],8)
     };
-    case "door_reacts": return doorResponse(state,creatureName);
+    case "door_reacts": return doorResponse(state,creatureName,route);
     case "crisis": return crisisStory(route,state,creatureName);
     case "aftermath": return aftermathStory(route,state,creatureName);
     case "ending": return endingStory(route,state,creatureName);
@@ -265,7 +266,7 @@ function relationship(targetSlug:RelationshipEffect["targetSlug"],trust:number,a
 
 export function resolveImpossibleDoorChoice(beatId:string,choiceId:string,route:DoorRoute|null,state:DoorStoryState,creatureName:string):DoorTransition {
   const beat=buildImpossibleDoorBeat(beatId,creatureName,route,state);
-  if(!beat.story.choices.some((candidate)=>candidate.id===choiceId)) throw new Error("choice is not available for this story beat");
+  if(!beat.story.choices.some((candidate)=>candidate.id===choiceId)) throw new AppError("door_invalid_choice",400,"That choice isn't on the table for this moment of the story.");
 
   if(beatId==="dust_moved") {
     const discoveryMethod=choiceId==="lift_nest"?"lifted_nest":"asked_first";
@@ -358,5 +359,5 @@ export function resolveImpossibleDoorChoice(beatId:string,choiceId:string,route:
     next.cliffhanger={title,message};
     return next;
   }
-  throw new Error("story beat is already complete");
+  throw new AppError("door_beat_complete",409,"That part of the story is already finished.");
 }

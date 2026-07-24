@@ -1,3 +1,5 @@
+import { AppError } from "./errors.js";
+import { isBlockedName } from "./moderation.js";
 import type { AvatarGenome, Personality, StoryCard } from "./types.js";
 
 export type WakeChoice = "gentle" | "noise" | "snack";
@@ -32,8 +34,9 @@ export function wakeFlag(choice:WakeChoice):string {
 
 export function normalizeCreatureName(input:string):string {
   const value=input.normalize("NFKC").replace(/\s+/g," ").trim();
-  if(value.length<2||value.length>24) throw new Error("name must be 2 to 24 characters");
-  if(!/^[\p{L}\p{N}][\p{L}\p{N} '\-]{0,22}[\p{L}\p{N}]$/u.test(value)) throw new Error("name contains unsupported characters");
+  if(value.length<2||value.length>24) throw new AppError("name_length",400,"Names need between 2 and 24 characters.");
+  if(!/^[\p{L}\p{N}][\p{L}\p{N} '\-]{0,22}[\p{L}\p{N}]$/u.test(value)) throw new AppError("name_charset",400,"The nameplate only holds letters, numbers, spaces, apostrophes and hyphens.");
+  if(isBlockedName(value)) throw new AppError("name_blocked",400,"That name won't fit on the nameplate. Try a kinder one?");
   return value;
 }
 

@@ -17,7 +17,7 @@ inserts nothing — that is the property under test.
 | Deployment reachable over HTTPS | Railway public domain, see [`docs/RAILWAY_DEPLOY.md`](RAILWAY_DEPLOY.md) |
 | Environment complete | `.env.example`, plus the production-only guards below |
 | Backups verified | [`docs/BACKUP_RESTORE.md`](BACKUP_RESTORE.md) |
-| Privacy and support reachable by a player | [`docs/PRIVACY.md`](PRIVACY.md), [`docs/SUPPORT.md`](SUPPORT.md) |
+| Privacy and support reachable by a player | [`docs/PRIVACY.md`](PRIVACY.md), [`docs/SUPPORT.md`](SUPPORT.md) — support is `@BloopyNetworkBot` and must be watched daily |
 
 ### Production configuration guards
 

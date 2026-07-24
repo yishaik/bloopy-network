@@ -3,23 +3,31 @@
 A player needs one obvious way to reach a human. The broad-release gate in
 [`docs/GO_LIVE.md`](GO_LIVE.md) is not met until this page names a real, monitored channel.
 
-## Set this up before inviting anyone
-
-Replace the placeholders below with the real values. Leaving them as placeholders means the support
-gate is **not** met.
+## Channels
 
 | Channel | Value | Used for |
 |---|---|---|
-| Telegram | `@BLOOPY_SUPPORT_HANDLE` | First line for players |
-| Email | `support@BLOOPY_DOMAIN` | Privacy, export and deletion requests |
-| Issues | `github.com/yishaik/bloopy-network/issues` | Bugs from testers who have an account |
+| Telegram | [`@BloopyNetworkBot`](https://t.me/BloopyNetworkBot) | First line for players, including privacy, export and deletion requests |
+| Issues | `github.com/yishaik/bloopy-network/issues` | Bugs from testers who have a GitHub account |
 
-Publish the Telegram handle in the manager bot's `/start` reply and in the Mini App before Phase 1
-invitations go out.
+For the Phase-1 alpha the manager bot is the single support channel. Testers already have it open,
+and it is the account whose identity we can verify a request against.
+
+### One thing to know before relying on it
+
+The manager bot answers a plain message by running a game action — nothing is escalated to a human on
+its own. Support only works if the operator **watches for it**. Until a dedicated `/support` command
+exists, either:
+
+- tell testers to message the operator's own Telegram account directly for anything that is not a
+  bug report, or
+- check `analytics_events` and the manager bot's chats daily during the alpha.
+
+An unwatched channel is worse than no channel, because it looks like a promise.
 
 ## What a player should be told
 
-> Something wrong, or want your data? Message **@BLOOPY_SUPPORT_HANDLE**. You can also download,
+> Something wrong, or want your data? Message **@BloopyNetworkBot**. You can also download,
 > reset or delete everything yourself in Bloopy under **Your data**.
 
 Point at self-service first. It is faster for them and safer for us: nobody has to prove who they

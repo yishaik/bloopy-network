@@ -31,7 +31,7 @@ and any public or uncontrolled sharing.
 - [ ] `/health` version recorded: `________`
 - [ ] manual gate-A items in [`docs/GO_LIVE.md`](GO_LIVE.md) ticked
 - [ ] backup taken today and the restore drill passed
-- [ ] support handle live and published in the bot's `/start` reply
+- [ ] support channel (`@BloopyNetworkBot`) is being watched daily — see [`SUPPORT.md`](SUPPORT.md)
 - [ ] privacy copy reachable by a player
 - [ ] tester guidance sent
 

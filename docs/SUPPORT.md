@@ -13,17 +13,30 @@ A player needs one obvious way to reach a human. The broad-release gate in
 For the Phase-1 alpha the manager bot is the single support channel. Testers already have it open,
 and it is the account whose identity we can verify a request against.
 
-### One thing to know before relying on it
+### How a request reaches you
 
-The manager bot answers a plain message by running a game action — nothing is escalated to a human on
-its own. Support only works if the operator **watches for it**. Until a dedicated `/support` command
-exists, either:
+A plain message to the bot is handled as a game action and reaches nobody. **`/support` is the
+command that opens a ticket:**
 
-- tell testers to message the operator's own Telegram account directly for anything that is not a
-  bug report, or
-- check `analytics_events` and the manager bot's chats daily during the alpha.
+```text
+/support the daily message arrived during my quiet hours
+```
 
-An unwatched channel is worse than no channel, because it looks like a promise.
+The bot records it, confirms to the player that a human will read it, and works **before onboarding
+is finished** — a player who cannot get past the nest is exactly the one who needs to reach you.
+Sending `/support` with no text replies with the usage example instead of opening an empty ticket.
+A Telegram webhook retry cannot open a duplicate ticket; the request is keyed by update.
+
+Read the inbox:
+
+```bash
+curl -H "x-admin-key: $ADMIN_API_KEY" https://<deployment>/api/admin/support
+curl -H "x-admin-key: $ADMIN_API_KEY" -H 'content-type: application/json' \
+     -d '{"status":"closed"}' -X POST https://<deployment>/api/admin/support/<id>
+```
+
+`?status=open|acknowledged|closed|all`. Check it daily during the alpha — the bot confirms to the
+player that a human will read it, and that has to be true.
 
 ## What a player should be told
 

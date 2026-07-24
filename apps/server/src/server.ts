@@ -197,6 +197,26 @@ app.post("/api/admin/outbox/:id/replay",async(request,reply)=>{if(!isAdmin(reque
 app.post("/api/admin/runtime/controls/:key",async(request,reply)=>{if(!isAdmin(request.headers))return reply.code(401).send({error:"unauthorized"});const params=z.object({key:z.enum(["telegram_ingress","outbox_delivery","risky_mutations"])}).parse(request.params);const body=z.object({enabled:z.boolean(),reason:z.string().max(300).nullable().default(null)}).parse(request.body);await withTransaction((client)=>setRuntimeControl(client,params.key as RuntimeControlKey,body.enabled,body.reason,"admin_api"));return {ok:true};});
 app.post("/api/admin/runtime/recover",async(request,reply)=>{if(!isAdmin(request.headers))return reply.code(401).send({error:"unauthorized"});return recoverExpiredLeases();});
 
+// Support inbox. The manager bot records a /support request; without somewhere to read it the
+// channel is a promise nobody keeps.
+app.get("/api/admin/support",{config:{rateLimit:{max:60,timeWindow:"1 minute"}}},async(request,reply)=>{
+  if(!isAdmin(request.headers))return reply.code(401).send({error:"unauthorized"});
+  const query=z.object({status:z.enum(["open","acknowledged","closed","all"]).default("open"),limit:z.coerce.number().int().min(1).max(200).default(50)}).parse(request.query);
+  const rows=await db.query(
+    `SELECT id,status,message,chat_id,telegram_user_id,created_at,updated_at,closed_at,player_id IS NOT NULL AS has_account
+     FROM support_requests ${query.status==="all"?"":"WHERE status=$2"} ORDER BY created_at DESC LIMIT $1`,
+    query.status==="all"?[query.limit]:[query.limit,query.status]);
+  return {items:rows.rows.map((row)=>({id:String(row.id),status:String(row.status),message:String(row.message),chatId:String(row.chat_id),telegramUserId:row.telegram_user_id===null?null:String(row.telegram_user_id),hasAccount:Boolean(row.has_account),createdAt:new Date(row.created_at).toISOString(),closedAt:row.closed_at?new Date(row.closed_at).toISOString():null}))};
+});
+app.post("/api/admin/support/:id",{config:{rateLimit:{max:60,timeWindow:"1 minute"}}},async(request,reply)=>{
+  if(!isAdmin(request.headers))return reply.code(401).send({error:"unauthorized"});
+  const params=z.object({id:z.string().uuid()}).parse(request.params);
+  const body=z.object({status:z.enum(["open","acknowledged","closed"])}).parse(request.body);
+  const updated=await db.query(`UPDATE support_requests SET status=$2,updated_at=now(),closed_at=CASE WHEN $2='closed' THEN now() ELSE NULL END WHERE id=$1 RETURNING id`,[params.id,body.status]);
+  if(!updated.rowCount)return reply.code(404).send({error:"not found"});
+  return {ok:true,status:body.status};
+});
+
 // Human verification gates (#17). Read-only state plus one safe probe, consumed by
 // `npm run verify:gate`. Neither route exposes a token, webhook secret, Telegram user id or message.
 app.get("/api/admin/verification",{config:{rateLimit:{max:60,timeWindow:"1 minute"}}},async(request,reply)=>{if(!isAdmin(request.headers))return reply.code(401).send({error:"unauthorized"});const query=z.object({windowMinutes:z.coerce.number().int().min(1).max(1440).default(60)}).parse(request.query);return withTransaction((client)=>verificationSnapshot(client,query.windowMinutes));});

@@ -88,6 +88,7 @@ export async function exportPlayerData(client: pg.PoolClient, playerId: string):
   const referralsGiven = await forCreatures("SELECT count(*)::int AS count FROM referrals WHERE referrer_creature_id = ANY($1::uuid[]) AND rewarded=true");
   const referredBy = await client.query("SELECT source,created_at FROM referrals WHERE referred_player_id=$1", [playerId]);
   const activity = await client.query("SELECT activity_date,open_count,first_open_at,last_open_at FROM player_daily_activity WHERE player_id=$1 ORDER BY activity_date", [playerId]);
+  const support = await client.query("SELECT status,message,created_at,closed_at FROM support_requests WHERE player_id=$1 ORDER BY created_at", [playerId]);
 
   const account = player.rows[0];
   await recordLifecycleEvent(client, "data_exported", scope.telegramUserId, { creatures: ids.length });
@@ -121,7 +122,8 @@ export async function exportPlayerData(client: pg.PoolClient, playerId: string):
     aiConnection: aiProfile.rows[0] ?? null,
     managedBots: bots,
     referrals: { rewardedInvites: Number(referralsGiven[0]?.count ?? 0), referredBy: referredBy.rows[0] ?? null },
-    dailyActivity: activity.rows
+    dailyActivity: activity.rows,
+    supportRequests: support.rows
   };
 }
 
@@ -178,6 +180,9 @@ export async function deleteAccount(client: pg.PoolClient, playerId: string): Pr
     // Security events are kept for abuse investigation but lose the identifier that names a person.
     await client.query("UPDATE security_events SET telegram_user_id=NULL WHERE telegram_user_id=$1", [scope.telegramUserId]);
     await client.query("UPDATE managed_bot_access_rules SET telegram_user_id=NULL WHERE telegram_user_id=$1", [scope.telegramUserId]);
+    // Support requests carry the player's own words. The player_id cascade removes most of them;
+    // this catches any recorded against the Telegram id alone.
+    await client.query("DELETE FROM support_requests WHERE telegram_user_id=$1", [scope.telegramUserId]);
   }
   const deleted = await client.query("DELETE FROM players WHERE id=$1 RETURNING id", [playerId]);
   await recordLifecycleEvent(client, "account_deleted", scope.telegramUserId, { creatures: scope.creatureIds.length, bots: scope.botIds.length });

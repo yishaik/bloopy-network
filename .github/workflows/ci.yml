@@ -100,3 +100,13 @@ jobs:
           path: openrouter-db-smoke.log
       - if: steps.openrouter_smoke.outcome == 'failure'
         run: cat openrouter-db-smoke.log && exit 1
+      - id: telegram_control_smoke
+        continue-on-error: true
+        run: npm run test:telegram-control-db -w @bloopy/server > telegram-control-db-smoke.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: steps.telegram_control_smoke.outcome == 'failure'
+        with:
+          name: telegram-control-db-smoke-log
+          path: telegram-control-db-smoke.log
+      - if: steps.telegram_control_smoke.outcome == 'failure'
+        run: cat telegram-control-db-smoke.log && exit 1

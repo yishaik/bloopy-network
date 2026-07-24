@@ -1,3 +1,4 @@
+import { AppError } from "./errors.js";
 import type { StoryCard, StoryChoice } from "./types.js";
 
 export const IMPOSSIBLE_DOOR_ARC_ID="impossible-door";
@@ -265,7 +266,7 @@ function relationship(targetSlug:RelationshipEffect["targetSlug"],trust:number,a
 
 export function resolveImpossibleDoorChoice(beatId:string,choiceId:string,route:DoorRoute|null,state:DoorStoryState,creatureName:string):DoorTransition {
   const beat=buildImpossibleDoorBeat(beatId,creatureName,route,state);
-  if(!beat.story.choices.some((candidate)=>candidate.id===choiceId)) throw new Error("choice is not available for this story beat");
+  if(!beat.story.choices.some((candidate)=>candidate.id===choiceId)) throw new AppError("door_invalid_choice",400,"That choice isn't on the table for this moment of the story.");
 
   if(beatId==="dust_moved") {
     const discoveryMethod=choiceId==="lift_nest"?"lifted_nest":"asked_first";
@@ -358,5 +359,5 @@ export function resolveImpossibleDoorChoice(beatId:string,choiceId:string,route:
     next.cliffhanger={title,message};
     return next;
   }
-  throw new Error("story beat is already complete");
+  throw new AppError("door_beat_complete",409,"That part of the story is already finished.");
 }

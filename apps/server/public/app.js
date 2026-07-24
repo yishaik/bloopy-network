@@ -101,6 +101,40 @@ function renderInventory(){
     </article>`).join("");
 }
 
+function renderQuests(){
+  const quests=state.quests||[];
+  $("quests-card").hidden=quests.length===0;
+  $("quest-list").innerHTML=quests.map((quest)=>`
+    <article class="inventory-item quest ${quest.status==="completed"?"done":""}">
+      <span class="inventory-icon">${quest.status==="completed"?"✅":"🧷"}</span>
+      <div><b>${escapeHtml(quest.title)}</b><small>${escapeHtml(quest.description)}</small></div>
+      <span class="inventory-count">${quest.status==="completed"?"done":""}</span>
+    </article>`).join("");
+}
+
+function renderRelationships(){
+  const relationships=(state.relationships||[]).filter((rel)=>rel.target_name);
+  $("relationships-card").hidden=relationships.length===0;
+  $("relationship-list").innerHTML=relationships.map((rel)=>`
+    <article class="inventory-item">
+      <img class="relationship-avatar" src="/api/creatures/${rel.target_creature_id}/avatar.svg" alt="">
+      <div><b>${escapeHtml(rel.target_name)}</b><small>${escapeHtml(String(rel.last_event||"").replaceAll("_"," "))}</small></div>
+      <span class="inventory-count">🤝${Number(rel.trust)} 💛${Number(rel.affection)}</span>
+    </article>`).join("");
+}
+
+function renderShop(){
+  const items=state.shop||[];
+  const stars=Number(state.creature.stars||0);
+  $("shop-card").hidden=items.length===0;
+  $("shop-list").innerHTML=items.map((item)=>`
+    <article class="inventory-item">
+      <span class="inventory-icon">${escapeHtml(item.icon)}</span>
+      <div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.description)}</small></div>
+      <button class="shop-buy" data-shop-item="${escapeHtml(item.id)}" ${stars<item.cost?"disabled":""}>⭐ ${item.cost}</button>
+    </article>`).join("");
+}
+
 function renderGame(){
   $("genesis").hidden=true;
   $("game-shell").hidden=false;
@@ -111,8 +145,12 @@ function renderGame(){
   $("energy").textContent=creature.energy;
   $("level").textContent=`Lv ${creature.level}`;
   $("xp").textContent=creature.xp;
+  $("stars").textContent=creature.stars??0;
   renderStoryArc();
+  renderQuests();
   renderInventory();
+  renderShop();
+  renderRelationships();
   $("story-feed").innerHTML=(state.stories||[]).map(storyCard).join("");
   $("npc-list").innerHTML=(state.npcs||[]).map((npc)=>`<div class="npc"><img src="/api/creatures/${npc.id}/avatar.svg"><b>${escapeHtml(npc.name)}</b><small>${escapeHtml(npc.current_location.replaceAll("_"," "))}</small></div>`).join("");
 }
@@ -126,6 +164,7 @@ function render(){
 async function refresh(){
   state=await api("/api/bootstrap");
   render();
+  if(state.encounter?.metName) toast(`✨ ${state.creature.name} met ${state.encounter.metName}!`);
 }
 
 async function chooseWake(choice){
@@ -169,6 +208,18 @@ async function chooseArc(choiceId){
   }
 }
 
+async function buyItem(itemId){
+  setButtonsDisabled($("shop-list"),true);
+  try{
+    const result=await api("/api/shop/buy",{method:"POST",body:JSON.stringify({itemId})});
+    toast(result.story.title);
+    await refresh();
+  }catch(error){
+    toast(error.message);
+    setButtonsDisabled($("shop-list"),false);
+  }
+}
+
 async function act(action){
   document.querySelectorAll("button[data-action]").forEach((button)=>{button.disabled=true;});
   try{
@@ -200,6 +251,9 @@ document.addEventListener("click",(event)=>{
   const arcButton=event.target.closest("button[data-arc-choice]");
   if(arcButton){void chooseArc(arcButton.dataset.arcChoice);return;}
 
+  const shopButton=event.target.closest("button[data-shop-item]");
+  if(shopButton){void buyItem(shopButton.dataset.shopItem);return;}
+
   const actionButton=event.target.closest("button[data-action]");
   if(actionButton) void act(actionButton.dataset.action);
 });
@@ -209,7 +263,9 @@ $("identity-form").addEventListener("submit",finishGenesis);
 $("share").addEventListener("click",()=>{
   const latest=state.stories?.[0];
   if(!latest)return;
-  const url=`${location.origin}/?startapp=meet_${state.creature.slug}`;
+  const url=state.managerBotUsername
+    ?`https://t.me/${state.managerBotUsername}?start=meet_${state.creature.slug}`
+    :`${location.origin}/?startapp=meet_${state.creature.slug}`;
   const share=`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(`${state.creature.name}: ${latest.title}`)}`;
   tg?.openTelegramLink?tg.openTelegramLink(share):window.open(share,"_blank","noopener");
 });

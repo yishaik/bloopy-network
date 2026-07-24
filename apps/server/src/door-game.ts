@@ -9,6 +9,7 @@ import {
   type DoorStoryState
 } from "./impossible-door.js";
 import { config } from "./config.js";
+import { AppError } from "./errors.js";
 import type { StoryCard } from "./types.js";
 
 const impossibleDoorEnabled=config.IMPOSSIBLE_DOOR_ENABLED;
@@ -110,7 +111,7 @@ export async function getImpossibleDoorArc(client:pg.PoolClient,creatureId:strin
 async function applyInventoryDelta(client:pg.PoolClient,creatureId:string,instanceId:string,beatId:string,choiceId:string,item:{itemId:string;delta:number;reason:string}) {
   if(item.delta<0) {
     const available=await client.query(`SELECT COALESCE(SUM(delta),0)::integer AS quantity FROM inventory_ledger WHERE creature_id=$1 AND item_id=$2`,[creatureId,item.itemId]);
-    if(Number(available.rows[0].quantity)+item.delta<0) throw new Error(`not enough ${item.itemId} in inventory`);
+    if(Number(available.rows[0].quantity)+item.delta<0) throw new AppError("door_missing_item",409,`The pockets come up empty — a ${item.itemId.replaceAll("_"," ")} is needed for that.`);
   }
   const sourceKey=`door:${instanceId}:${beatId}:${choiceId}:${item.itemId}`;
   await client.query(`INSERT INTO inventory_ledger (creature_id,item_id,delta,source_key,metadata) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (creature_id,source_key) DO NOTHING`,[
@@ -132,18 +133,18 @@ async function applyRelationshipEffect(client:pg.PoolClient,creatureId:string,ef
 export async function applyImpossibleDoorChoice(client:pg.PoolClient,playerId:string,creatureId:string,input:{beatId:string;choiceId:string}):Promise<DoorChoiceResult> {
   const instanceResult=await client.query(`SELECT sai.*,c.name FROM story_arc_instances sai JOIN creatures c ON c.id=sai.creature_id WHERE sai.creature_id=$1 AND sai.arc_id=$2 FOR UPDATE OF sai`,[creatureId,IMPOSSIBLE_DOOR_ARC_ID]);
   const instance=instanceResult.rows[0];
-  if(!instance) throw new Error("impossible door story has not started");
+  if(!instance) throw new AppError("door_not_started",409,"The impossible door hasn't appeared for this creature yet.");
 
   if(instance.current_beat!==input.beatId) {
     const previous=await client.query("SELECT choice_id FROM story_arc_choices WHERE instance_id=$1 AND beat_id=$2",[instance.id,input.beatId]);
     if(previous.rows[0]?.choice_id===input.choiceId) {
       const current=await getImpossibleDoorArc(client,creatureId);
-      if(!current) throw new Error("story arc not found");
+      if(!current) throw new AppError("door_state_missing",500,"The door briefly misplaced itself. Try again in a moment.");
       return {replayed:true,storyArc:current,storyEntryId:null,narrative:null};
     }
-    throw new Error("story has already moved on");
+    throw new AppError("door_moved_on",409,"The story has already moved past that moment.");
   }
-  if(instance.status!=="active") throw new Error("story arc is already complete");
+  if(instance.status!=="active") throw new AppError("door_complete",409,"That adventure is already finished. A new thread will find you later.");
 
   const route=(instance.route??null) as DoorRoute|null;
   const state=(instance.state??{}) as DoorStoryState;
@@ -190,7 +191,7 @@ export async function applyImpossibleDoorChoice(client:pg.PoolClient,playerId:st
   }
 
   const current=await getImpossibleDoorArc(client,creatureId);
-  if(!current) throw new Error("story arc not found after transition");
+  if(!current) throw new AppError("door_state_missing",500,"The door briefly misplaced itself. Try again in a moment.");
   return {
     replayed:false,
     storyArc:current,

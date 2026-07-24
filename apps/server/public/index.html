@@ -54,6 +54,7 @@
           <span>⚡ <b id="energy">–</b></span>
           <span>✦ <b id="level">–</b></span>
           <span>XP <b id="xp">–</b></span>
+          <span>⭐ <b id="stars">–</b></span>
         </div>
       </section>
 
@@ -82,14 +83,29 @@
         <button data-action="rest">🛏 Rest</button>
       </section>
 
+      <section id="quests-card" class="card" hidden>
+        <div class="section-head"><h2>Small promises</h2><span class="pill">quests</span></div>
+        <div id="quest-list" class="inventory-grid"></div>
+      </section>
+
       <section id="inventory-card" class="card" hidden>
         <div class="section-head"><h2>Things worth keeping</h2><span class="pill">inventory</span></div>
         <div id="inventory-list" class="inventory-grid"></div>
       </section>
 
+      <section id="shop-card" class="card" hidden>
+        <div class="section-head"><h2>Momo's stall</h2><span class="pill">spend stars</span></div>
+        <div id="shop-list" class="inventory-grid"></div>
+      </section>
+
       <section class="card">
         <div class="section-head"><h2>What happened</h2><button id="share" class="quiet">Share</button></div>
         <div id="story-feed" class="feed"></div>
+      </section>
+
+      <section id="relationships-card" class="card" hidden>
+        <div class="section-head"><h2>Friends so far</h2><span class="pill">relationships</span></div>
+        <div id="relationship-list" class="inventory-grid"></div>
       </section>
 
       <section class="card">

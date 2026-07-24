@@ -120,7 +120,7 @@ export async function getDashboard(client: pg.PoolClient, playerId: string) {
   const [stories,npcs,relationships,questInstances,onboarding] = await Promise.all([
     client.query("SELECT * FROM story_entries WHERE creature_id=$1 ORDER BY created_at DESC LIMIT 12",[creature.id]),
     client.query("SELECT id,slug,name,personality,genome,mood,current_location FROM creatures WHERE kind IN ('npc','system') ORDER BY name"),
-    client.query("SELECT * FROM relationships WHERE source_creature_id=$1",[creature.id]),
+    client.query("SELECT r.*,c.name AS target_name,c.slug AS target_slug,c.kind AS target_kind FROM relationships r JOIN creatures c ON c.id=r.target_creature_id WHERE r.source_creature_id=$1 ORDER BY r.affection DESC",[creature.id]),
     client.query(`SELECT qi.*,q.title,q.description FROM quest_instances qi JOIN quests q ON q.id=qi.quest_id WHERE qi.creature_id=$1 ORDER BY qi.created_at DESC`,[creature.id]),
     getOnboardingState(client,creature.id)
   ]);

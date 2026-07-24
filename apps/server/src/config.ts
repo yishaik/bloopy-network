@@ -37,8 +37,9 @@ const schema = z.object({
   AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(60).max(400).default(160),
   PROACTIVE_DELAY_SECONDS: z.coerce.number().int().positive().default(7200),
   TELEGRAM_INGRESS_ENABLED: booleanFromString.default("true"),
-  MANAGED_BOT_FLEET_ENABLED: booleanFromString.default("true"),
-  BOT_TO_BOT_ENABLED: booleanFromString.default("true"),
+  // Risky surfaces stay opt-in until their production human-verification gates pass.
+  MANAGED_BOT_FLEET_ENABLED: booleanFromString.default("false"),
+  BOT_TO_BOT_ENABLED: booleanFromString.default("false"),
   OUTBOX_ENABLED: booleanFromString.default("true"),
   DEGRADED_MODE: booleanFromString.default("false"),
   BOT_INTERACTION_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
@@ -55,7 +56,7 @@ const schema = z.object({
   READY_MAX_UPDATE_BACKLOG: z.coerce.number().int().min(1).max(100000).default(500),
   READY_MAX_OUTBOX_BACKLOG: z.coerce.number().int().min(1).max(100000).default(500)
 }).superRefine((value, ctx) => {
-  if (INSECURE_ENCRYPTION_KEYS.has(value.APP_ENCRYPTION_KEY)) ctx.addIssue({ code: "custom", path: ["APP_ENCRYPTION_KEY"], message: "APP_ENCRYPTION_KEY is the public all-zero development key; generate a real one with: openssl rand -base64 32" });
+  if (INSECURE_ENCRYPTION_KEYS.has(value.APP_ENCRYPTION_KEY)) ctx.addIssue({ code: "custom", path: ["APP_ENCRYPTION_KEY"], message: "APP_ENCRYPTION_KEY is the public all-zero development key; generate one with: openssl rand -base64 32" });
   if (value.NODE_ENV === "production") {
     if (value.DEMO_MODE) ctx.addIssue({ code: "custom", path: ["DEMO_MODE"], message: "DEMO_MODE must be false in production" });
     if (PLACEHOLDER_SECRETS.has(value.TELEGRAM_WEBHOOK_SECRET)) ctx.addIssue({ code: "custom", path: ["TELEGRAM_WEBHOOK_SECRET"], message: "TELEGRAM_WEBHOOK_SECRET is a placeholder; generate one with: openssl rand -base64 24" });

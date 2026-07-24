@@ -24,6 +24,9 @@ async function main(){
     assert(!(await authorizeManagedHuman(client,{botId:botA,telegramUserId:stranger,chatId:stranger,chatType:"private"})),"stranger private chat was authorized");
     assert(!(await authorizeManagedHuman(client,{botId:botA,telegramUserId:ownerA,chatId:-100123,chatType:"supergroup"})),"owner group access was implicit");
     await upsertManagedBotAccessRule(client,ownerA,{botId:botA,chatId:-100123,telegramUserId:undefined,chatType:"supergroup",enabled:true});
+    await upsertManagedBotAccessRule(client,ownerA,{botId:botA,chatId:-100123,telegramUserId:undefined,chatType:"supergroup",enabled:true});
+    const groupRuleCount=await client.query(`SELECT count(*)::int AS count FROM managed_bot_access_rules WHERE bot_id=$1 AND chat_id=$2 AND telegram_user_id IS NULL`,[botA,-100123]);
+    assert(Number(groupRuleCount.rows[0].count)===1,"chat-wide access rule upsert created duplicate NULL-user rows");
     assert(Boolean(await authorizeManagedHuman(client,{botId:botA,telegramUserId:stranger,chatId:-100123,chatType:"supergroup"})),"approved group rule did not authorize the chat");
     const rejected=await client.query(`SELECT count(*)::int AS count FROM security_events WHERE event_type='managed_bot_access_rejected' AND bot_id=$1`,[botA]);
     assert(Number(rejected.rows[0].count)>=2,"authorization rejections were not audited");

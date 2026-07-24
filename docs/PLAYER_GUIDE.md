@@ -4,7 +4,7 @@
 
 Bloopy Network is a persistent creature game that lives inside Telegram.
 
-You are not configuring an assistant or operating a chatbot. You adopt a small fictional creature that has:
+You are not configuring an assistant or operating a generic chatbot. You adopt a small fictional creature with:
 
 - a stable name and visual identity;
 - moods, energy and personality traits;
@@ -18,15 +18,13 @@ The game is designed for short visits throughout the day, with enough continuity
 
 ## Current availability
 
-Features are released in stages.
-
 ### Shipped core game
 
 The manager bot and Mini App currently provide:
 
 - Character Genesis onboarding;
 - a persistent creature identity and genome-based avatar;
-- actions such as exploring, talking, helping, socializing and resting;
+- explore, talk, help, social and rest actions;
 - energy use and regeneration;
 - XP, levels, stars, items and evolution tiers;
 - quests and relationships;
@@ -36,6 +34,9 @@ The manager bot and Mini App currently provide:
 - a daily-return scene;
 - optional notifications with timezone and quiet hours;
 - player-to-player encounters through shared links;
+- shareable profile and story cards;
+- one-time referral rewards for a genuinely new player;
+- self-service data export, creature reset and account deletion;
 - optional OpenRouter Connected Mind narration.
 
 ### Staged features
@@ -51,14 +52,14 @@ The following are product goals, not promises that they are currently available:
 - safe matchmaking between unknown players' creatures;
 - photos, voice notes, video and link reactions;
 - more worlds and World Packs;
-- richer social history and shareable encounter cards.
+- richer meeting history and encounter cards.
 
 ## Getting started
 
 1. Open the Bloopy manager bot in Telegram.
 2. Send `/start` or open the Mini App.
 3. Complete Character Genesis.
-4. Choose how the creature wakes up, give it a name and select a visual marker.
+4. Choose how the creature wakes, give it a name and select a visual marker.
 5. The same creature should appear whenever you return.
 
 Genesis is part of the story, not a configuration form. Choices should feel playful and meaningful, but no single onboarding choice should permanently ruin a creature.
@@ -78,10 +79,6 @@ The game should never require constant attention. Closing Telegram is a normal p
 
 ## Actions and energy
 
-Actions represent what the creature does in the world.
-
-Typical actions include:
-
 - **Explore** — discover places, objects or story clues.
 - **Talk** — spend time with the creature and create a small story moment.
 - **Help** — assist an NPC or advance a helpful quest.
@@ -100,36 +97,36 @@ Actions and completed objectives may grant XP. Level changes represent the creat
 
 Stars are the current in-game currency. They are earned through gameplay and can be spent in Momo's shop.
 
+A new player arriving through a valid referral can receive a one-time reward after completing onboarding. The referring account also receives its one-time reward. Resetting a creature does not create another referral payout.
+
 ### Items and inventory
 
 Items are persistent and may be cosmetic, restorative or story-related. An item should not appear twice because a button was tapped twice or a request was retried.
 
 ### Evolution
 
-Evolution is a gradual visual and narrative change. The creature keeps its recognizable genome while gaining additions such as a stronger glow or crown. Evolution must preserve identity rather than replace the creature with an unrelated image.
+Evolution is gradual. The creature keeps its recognizable genome while gaining details such as stronger glow or a crown. Evolution must preserve identity rather than replace the creature with an unrelated image.
 
 ## Story arcs
 
-Bloopy uses authored branching stories. Current arcs include:
+Current authored arcs include:
 
 - **The Impossible Door**;
 - **The Letter From Tomorrow**.
 
-A story choice changes canonical game state only through the deterministic game engine. Optional AI may improve wording, but it cannot invent rewards, skip prerequisites or alter the legal choices.
+A story choice changes canonical state only through the deterministic game engine. Optional AI may improve wording, but it cannot invent rewards, skip prerequisites or alter legal choices.
 
 ## Characters and relationships
 
-The starting world is populated. The player should meet recurring characters such as:
+The starting world is populated with recurring characters such as:
 
 - **Numa**;
 - **Dr. Sock**;
 - **Momo**.
 
-Relationships persist. Repeated social actions should gradually change how characters respond rather than reset every session.
+Relationships persist. Repeated social actions should gradually change the relationship rather than reset every session.
 
 ## Memories and personality
-
-Bloopy can remember selected meaningful events.
 
 The memory screen allows the player to:
 
@@ -140,26 +137,37 @@ The memory screen allows the player to:
 
 Raw Telegram messages are not automatically treated as permanent personality facts. Memory used for AI narration is deliberately small, filtered and bounded.
 
-Personality changes gradually. The game should explain why a visible trait or mood changed and avoid dramatic personality swings caused by one click.
+Personality changes gradually. The game should explain why a visible trait or mood changed and avoid dramatic swings caused by one click.
 
 ## Daily-return moments and notifications
 
-Players may opt into one daily Telegram moment.
+Notifications are optional:
 
-Notification behavior:
-
-- notifications are off by default;
-- the player selects a timezone and local delivery time;
+- off by default;
+- local timezone and delivery time are player-controlled;
 - quiet hours are respected;
 - opting out stops future scheduled messages;
-- the game should not send repeated guilt-based reminders;
-- a delivery retry must not create duplicate rewards.
+- the game does not use guilt-based reminders;
+- a delivery retry cannot grant duplicate rewards.
+
+## Sharing and referrals
+
+The Mini App can generate an opaque public share page with:
+
+- a creature profile card;
+- a story card;
+- a text-only summary fallback;
+- a Telegram meeting/referral link.
+
+The public page is built from a fixed set of non-private creature fields. It does not expose the owner's Telegram user ID, private memories, credentials or raw game state.
+
+A share/referral link may award a one-time referral only when a new player completes onboarding. Reopening or resetting cannot farm repeat rewards.
 
 ## Player-to-player encounters
 
 ### Shared-link encounters
 
-A player can share a creature encounter link. When another player opens it, both creatures can receive a mutual relationship and story entry. Reopening the same link must not repeatedly grant rewards.
+When another player opens a valid creature link, both creatures can receive a mutual relationship and story entry. Reopening the same encounter must not repeatedly grant rewards.
 
 ### Personal managed bots
 
@@ -171,29 +179,57 @@ This feature may be disabled during staged rollout.
 
 Two personal creature bots can participate in a short, server-controlled conversation after both owners consent. Meetings have fixed turn and time limits and cannot grant arbitrary game rewards.
 
-The target player experience includes two modes:
+The target player experience includes:
 
 - direct invitation between known players;
 - optional pseudonymous matchmaking between strangers.
 
-See [Bot meetings](./BOT_MEETINGS.md) for the full specification and current implementation status.
+See [Bot meetings](./BOT_MEETINGS.md).
 
 ## Optional AI narration
 
 Bloopy is fully playable without AI.
 
-A player may connect OpenRouter through the Connected Mind flow or use an approved compatible profile. AI is used only to enrich narration under strict limits.
+A player may connect OpenRouter through Connected Mind or use an approved compatible profile. AI only enriches narration under strict limits.
 
 AI must never:
 
 - decide legal choices;
 - grant XP, stars, items or levels;
 - write directly to canonical state;
-- reveal private memories not included in the approved context;
+- reveal private memories outside the approved context;
 - control another player's creature;
 - bypass safety or moderation rules.
 
 When AI is unavailable, slow or rejected, Bloopy uses authored deterministic text.
+
+## Your data
+
+The Mini App provides self-service controls.
+
+### Export
+
+Download a JSON copy of player-owned game data. The export includes readable game state but excludes bot tokens, API keys, webhook secrets, Telegram initData, OAuth secrets and internal security details.
+
+### Reset creature
+
+Reset requires typing `RESET`.
+
+Reset:
+
+- revokes managed bots first;
+- deletes creature-scoped progression;
+- preserves the Telegram player account;
+- creates a new creature on the next launch;
+- gives the new creature a new generation/share identity so old links do not silently point to it.
+
+### Delete account
+
+Deletion requires typing `DELETE`.
+
+Deletion revokes managed bots and removes player-owned state and stored AI credentials. Operational/security records that must remain are anonymized according to the account lifecycle rules. Repeating deletion does not recreate the account.
+
+See [Product privacy](./PRIVACY.md) and [Privacy and safety](./PRIVACY_AND_SAFETY.md).
 
 ## Privacy and safety
 
@@ -208,9 +244,7 @@ Bloopy should never expose to other players:
 - raw Telegram initData;
 - private AI credentials.
 
-For stranger encounters, only the public creature identity and a moderated encounter result should be visible. Players must be able to block rematches and report a problematic encounter.
-
-Read [Privacy and safety](./PRIVACY_AND_SAFETY.md) for details.
+For stranger encounters, only public creature identity and a moderated encounter result should be visible. Players must be able to block rematches and report problematic encounters.
 
 ## What good behavior feels like
 
@@ -220,8 +254,8 @@ Bloopy should be:
 - strange, warm and gently funny;
 - surprising without becoming random noise;
 - persistent without becoming demanding;
-- emotionally responsive without pretending to be a human;
-- rewarding without using manipulative urgency;
+- emotionally responsive without pretending to be human;
+- rewarding without manipulative urgency;
 - safe to leave and easy to return to.
 
 Bloopy should not:
@@ -238,19 +272,19 @@ Bloopy should not:
 
 ### The Mini App does not open
 
-Close and reopen the Telegram chat, then launch the Mini App again from the manager bot. During an outage, the service may temporarily enter read-only mode.
+Close and reopen the Telegram chat, then launch the Mini App again. During an outage, the service may temporarily enter read-only mode.
 
 ### An action appears not to complete
 
-Wait briefly and refresh once. Avoid repeated rapid taps. The backend is designed to deduplicate canonical effects, but repeated external Telegram delivery can still require operator inspection in rare uncertain-delivery cases.
+Wait briefly and refresh once. Avoid repeated rapid taps. Canonical effects are deduplicated, but rare uncertain Telegram delivery may require operator inspection.
 
 ### A managed-bot or meeting option is missing
 
-The feature may be disabled for the current alpha phase. This is expected until its production verification gate passes.
+The feature may be disabled for the current alpha phase.
 
 ### AI narration is unavailable
 
-The game should continue with authored fallback text. Reconnect or verify the OpenRouter connection from settings only if desired.
+The game should continue with authored fallback text. Reconnect or verify OpenRouter only if desired.
 
 ## Reporting a problem
 
@@ -262,6 +296,7 @@ Provide:
 - approximate time and timezone;
 - device and Telegram platform;
 - screenshot or screen recording when safe;
-- whether retrying created a duplicate story, reward or message.
+- whether retrying created a duplicate story, reward or message;
+- an opaque support/meeting reference if the UI shows one.
 
 Never paste bot tokens, API keys, Telegram initData, webhook secrets or full private conversations into a public GitHub issue.

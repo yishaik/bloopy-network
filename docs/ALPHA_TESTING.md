@@ -1,6 +1,12 @@
 # Bloopy staged alpha testing
 
-This is the release gate for inviting additional testers while keeping unverified Telegram surfaces isolated.
+This is the release gate for inviting additional testers while keeping unverified Telegram and social surfaces isolated.
+
+## Status language
+
+- **Current gate** means the checks apply to code available in the repository now.
+- **Planned gate** means the product flow must be implemented before the checks can run.
+- Passing automated CI never enables a risky production flag by itself.
 
 ## Phase 0 — automated release gate
 
@@ -42,6 +48,7 @@ Not in scope:
 - photos, voice notes, video or link analysis (#43);
 - managed personal bots until Phase 2;
 - bot-to-bot conversations until Phase 3;
+- stranger matchmaking until the planned Phase 4;
 - sensitive or confidential content.
 
 ### Tester checklist
@@ -100,7 +107,9 @@ Required checks:
 
 If all checks pass, the managed-bot fleet can remain enabled for a small known tester group. Otherwise set it back to `false` without rolling back migrations.
 
-## Phase 3 — two-owner bot-to-bot verification
+A complete player-facing managed-bot hub is tracked separately. Backend verification does not by itself make every management action suitable for broad players.
+
+## Phase 3A — two-owner protocol verification
 
 Prerequisites:
 
@@ -113,7 +122,7 @@ Temporary configuration:
 - `MANAGED_BOT_FLEET_ENABLED=true`;
 - `BOT_TO_BOT_ENABLED=true`.
 
-Required checks:
+Required protocol checks:
 
 1. interaction is blocked until both owners enable consent;
 2. interaction starts after two-sided consent;
@@ -126,7 +135,96 @@ Required checks:
 9. disabling `BOT_TO_BOT_ENABLED` stops new interactions immediately;
 10. no AI output can directly grant rewards, flags, items or relationship changes.
 
-After these checks pass, #17 can be closed as fully production-verified and #43 may proceed.
+Passing Phase 3A verifies the low-level production protocol and permits closing the reliability-only portion of #17.
+
+## Phase 3B — direct player-facing meeting flow (planned)
+
+Tracked by issues #58–#63.
+
+Prerequisites:
+
+- Phase 3A passes;
+- managed-bot hub and consent UI exist;
+- direct invitation and acceptance exist;
+- player-scoped start/status/history APIs exist;
+- meeting notifications/recovery UI exist.
+
+Required checks with two owners:
+
+1. both owners enable consent through the Mini App;
+2. owner A creates a short-lived invitation;
+3. owner B sees the public creature identity and accepts with a bot they own;
+4. only an owning participant can start;
+5. repeated start taps create one interaction;
+6. both Mini Apps show consistent progress;
+7. protocol text/signatures are never rendered;
+8. both owners receive at most one completion notification;
+9. both can review a player-safe transcript/history;
+10. consent revocation, expiry, limits and disabled flags have clear UI states;
+11. uncertain delivery does not expose an automatic player replay;
+12. no private owner identity or secret reaches the other player.
+
+Direct meetings may expand only after stable metrics and no unexplained queue failures.
+
+## Phase 4 — stranger matchmaking (planned)
+
+Tracked by issue #64. This phase is separate from direct invitations and uses a dedicated feature flag such as:
+
+```text
+BOT_MATCHMAKING_ENABLED=false
+```
+
+Prerequisites:
+
+- Phase 3B direct meetings are stable;
+- one-active-queue-entry invariant is implemented;
+- atomic matching and idempotency tests pass;
+- block/report/no-repeat controls exist;
+- owner identity remains pseudonymous;
+- cohort allowlist and suspension controls exist;
+- operators can inspect privacy-safe queue/match metrics.
+
+### Phase 4A — deterministic and controlled verification
+
+Use at least four real accounts and bots.
+
+Verify:
+
+1. only an owner can queue their bot;
+2. queue join is explicit and cancellable;
+3. two workers cannot create duplicate matches;
+4. cancelled/expired entries are not matched;
+5. language/world/progression compatibility works;
+6. repeat-pair cooldown works;
+7. a block in either direction prevents rematching;
+8. consent/flag/budget changes before match are rechecked;
+9. completion notification is bounded and deduplicated;
+10. no human Telegram identity or private memory is exposed;
+11. mutual “remember this creature” requires both owners;
+12. report creates an opaque support reference;
+13. disabling the matchmaking flag stops new matches immediately.
+
+### Phase 4B — allowlisted stranger cohort
+
+- begin with a small reviewed cohort;
+- treat participants as strangers in the matcher even if operators know them;
+- review reports manually;
+- monitor queue time, match completion, block/report rate and delivery states;
+- stop expansion on identity leakage, harassment, duplicate matches or unexplained uncertain delivery.
+
+### Phase 4C — broader rollout
+
+Broader enablement requires:
+
+- stable safety and delivery metrics;
+- documented moderation/report operations;
+- deletion/retention policy for queue, match, transcript and report data;
+- player-facing privacy explanation;
+- incident/kill-switch drill.
+
+## Media testing dependency
+
+Media reactions (#43) may proceed after the relevant ingress, delivery, ownership and privacy guarantees are verified. Media needs its own type/size/retention/moderation rollout; completing bot-to-bot verification does not automatically approve media ingestion.
 
 ## Invite message guidance
 
@@ -134,9 +232,16 @@ Tell Phase 1 testers:
 
 - this is a private alpha;
 - do not send sensitive information;
-- media reactions and personal bots are not enabled yet;
+- media reactions and personal bots may not be enabled yet;
 - report the exact step, approximate time and a screenshot when something fails;
 - do not share the bot publicly without permission.
+
+For managed-bot/social testers also explain:
+
+- which features are temporarily enabled;
+- that bot meetings are bounded and may be disabled quickly;
+- not to paste protocol text, tokens or private messages into GitHub;
+- how to block/report or contact support.
 
 ## Bug report template
 
@@ -154,6 +259,8 @@ Tell Phase 1 testers:
 ### Screenshot or screen recording
 
 ### Did retrying cause a duplicate reward, story or message?
+
+### Opaque meeting/support reference, if shown
 ```
 
-Do not ask testers to paste Telegram tokens, OpenRouter keys, initData, webhook secrets or full private messages into GitHub.
+Do not ask testers to paste Telegram tokens, OpenRouter keys, initData, webhook secrets, signed envelopes or full private messages into GitHub.

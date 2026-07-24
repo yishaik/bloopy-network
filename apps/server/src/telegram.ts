@@ -54,6 +54,15 @@ async function configureManagedBot(token:string,botId:number,webhookSecret:strin
   await botCall(token,"setChatMenuButton",{menu_button:{type:"web_app",text:"Open my world",web_app:{url:config.PUBLIC_BASE_URL}}});
 }
 
+const SUPPORT_MESSAGE_LIMIT=2000;
+/** Durable record of a support request. Keyed by update so a webhook retry cannot open two tickets. */
+export async function recordSupportRequest(client:pg.PoolClient,input:{playerId:string|null;telegramUserId:number;chatId:number;message:string;sourceKey:string}):Promise<void>{
+  await client.query(`INSERT INTO support_requests (player_id,telegram_user_id,chat_id,message,source_key) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (source_key) DO NOTHING`,
+    [input.playerId,input.telegramUserId,input.chatId,input.message.slice(0,SUPPORT_MESSAGE_LIMIT),input.sourceKey]);
+  // Non-identifying counter so an operator notices a spike without reading anyone's message.
+  await client.query(`INSERT INTO analytics_events (player_id,event_name,properties) VALUES ($1,'support_request_opened','{}')`,[input.playerId]);
+}
+
 async function enqueueTelegram(client:pg.PoolClient,input:{botId?:number;chatId:number|string;payload:Record<string,unknown>;sourceKey:string;playerId?:string;creatureId?:string}):Promise<void>{
   await client.query(`INSERT INTO outbox (bot_id,chat_id,payload,source_key,player_id,creature_id) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (source_key) WHERE source_key IS NOT NULL DO NOTHING`,[input.botId??null,String(input.chatId),JSON.stringify(input.payload),input.sourceKey,input.playerId??null,input.creatureId??null]);
 }
@@ -86,6 +95,20 @@ export async function handleManagerUpdate(client:pg.PoolClient,update:TelegramUp
     const buttons:Array<Record<string,unknown>>=[{text:"Open the world",web_app:{url:config.PUBLIC_BASE_URL}}];if(config.MANAGED_BOT_FLEET_ENABLED&&config.TELEGRAM_MANAGER_BOT_USERNAME)buttons.push({text:"Give it a bot",url:managedBotCreationLink(creature.name,message.from.id)});
     await reply("start",{method:"sendMessage",text:greeting,reply_markup:{inline_keyboard:[buttons]}});return;
   }
+  // Deliberately handled before the onboarding gate: a player who cannot finish onboarding is
+  // exactly the one who needs to reach a human, and the gate would otherwise swallow the request.
+  if(text.startsWith("/support")){
+    const detail=text.slice("/support".length).trim();
+    // A bare /support opens nothing: an empty ticket wastes the operator's attention and tells the
+    // player nothing. Ask for the detail instead, then record it on the next message.
+    if(!detail){
+      await reply("support-usage",{method:"sendMessage",text:"Tell me what is wrong and I will pass it on, like this:\n\n/support the daily message arrived during my quiet hours\n\nFor your data, Bloopy has Download, Start over and Delete under \"Your data\"."});
+      return;
+    }
+    await recordSupportRequest(client,{playerId:player.id,telegramUserId:message.from.id,chatId:message.chat.id,message:detail,sourceKey:`support:manager:${update.update_id}`});
+    await reply("support",{method:"sendMessage",text:"Thank you — this is written down and a human will read it. If it is about your data, you can also download, reset or delete everything yourself in Bloopy under \"Your data\"."});
+    return;
+  }
   if(onboarding.status!=="complete"){await reply("onboarding-required",{method:"sendMessage",text:"Your creature is still waiting inside the nest. Open Bloopy and finish waking it first.",reply_markup:{inline_keyboard:[[{text:"Open the nest",web_app:{url:config.PUBLIC_BASE_URL}}]]}});return;}
   if(text.startsWith("/spawn")){if(!config.MANAGED_BOT_FLEET_ENABLED){await reply("fleet-paused",{method:"sendMessage",text:"Managed creature bots are paused right now. Your creature and Mini App are still available."});return;}await reply("spawn",{method:"sendMessage",text:"Create a personal Telegram bot for your creature:",reply_markup:{keyboard:[[{text:"Create my creature bot",request_managed_bot:{request_id:Math.floor(Math.random()*2_000_000_000),suggested_name:creature.name,suggested_username:`Bloopy_${message.from.id.toString().slice(-6)}_bot`}}]],resize_keyboard:true,one_time_keyboard:true}});return;}
   const action=text.includes("friend")||text.includes("meet")?"social":text.includes("sleep")?"rest":"talk";
@@ -117,7 +140,7 @@ export async function revokeManagedBot(ownerTelegramUserId:number,botId:number):
 
 export async function migrateManagedWebhooks(runner:pg.Pool):Promise<void>{if(!config.MANAGED_BOT_FLEET_ENABLED)return;const bots=await runner.query("SELECT bot_id,token_cipher,webhook_secret FROM managed_bots WHERE enabled=true AND revoked_at IS NULL");for(const bot of bots.rows){try{await configureManagedBot(open(bot.token_cipher),Number(bot.bot_id),String(bot.webhook_secret));await runner.query(`UPDATE managed_bots SET last_webhook_at=now() WHERE bot_id=$1`,[bot.bot_id]);}catch(error){console.error({error,botId:bot.bot_id},"managed webhook migration failed");}}}
 
-export async function configureManagerWebhook():Promise<void>{if(!config.TELEGRAM_MANAGER_BOT_TOKEN||!config.PUBLIC_BASE_URL.startsWith("https://")||!config.TELEGRAM_INGRESS_ENABLED)return;await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"setWebhook",{url:`${config.PUBLIC_BASE_URL}/telegram/manager`,secret_token:config.TELEGRAM_WEBHOOK_SECRET,allowed_updates:["message","managed_bot"],drop_pending_updates:false});await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"setMyCommands",{commands:[{command:"start",description:"Adopt your creature"},{command:"spawn",description:"Give your creature its own bot"}]});await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"setChatMenuButton",{menu_button:{type:"web_app",text:"Open Bloopy",web_app:{url:config.PUBLIC_BASE_URL}}});}
+export async function configureManagerWebhook():Promise<void>{if(!config.TELEGRAM_MANAGER_BOT_TOKEN||!config.PUBLIC_BASE_URL.startsWith("https://")||!config.TELEGRAM_INGRESS_ENABLED)return;await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"setWebhook",{url:`${config.PUBLIC_BASE_URL}/telegram/manager`,secret_token:config.TELEGRAM_WEBHOOK_SECRET,allowed_updates:["message","managed_bot"],drop_pending_updates:false});await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"setMyCommands",{commands:[{command:"start",description:"Adopt your creature"},{command:"spawn",description:"Give your creature its own bot"},{command:"support",description:"Report a problem or ask about your data"}]});await botCall(config.TELEGRAM_MANAGER_BOT_TOKEN,"setChatMenuButton",{menu_button:{type:"web_app",text:"Open Bloopy",web_app:{url:config.PUBLIC_BASE_URL}}});}
 
 export async function dispatchOutbox(client:pg.PoolClient):Promise<number>{
   if(!config.OUTBOX_ENABLED||!config.TELEGRAM_MANAGER_BOT_TOKEN)return 0;

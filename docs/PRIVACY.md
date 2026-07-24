@@ -31,6 +31,8 @@ Last reviewed against the code at release 0.12.0.
 - Security events (for example a rejected bot access attempt), kept for abuse investigation.
 - Analytics events recording that something happened — an action, a completed quest — not the text
   of your stories.
+- Support requests you send with `/support`, including the text you wrote, so a human can answer
+  them. They are included in your export and removed when you delete your account.
 
 ## What is never stored
 
@@ -62,7 +64,7 @@ Open Bloopy → **Your data**.
 |---|---|
 | **Download my data** | A JSON file with your account, creature, choices, stories, memories, quests, inventory, relationships, preferences and AI connection metadata. It contains no keys, tokens or secrets. |
 | **Start over with a new creature** | Type `RESET`. Deletes the creature and everything scoped to it, revokes any creature bot, keeps your account. A new creature is waiting next time you open Bloopy, under a new share link — links you shared for the old creature stop working. |
-| **Delete my account** | Type `DELETE`. Removes the account, creature, stories, memories, preferences, stored credentials and any creature bot. Queued messages to you are cancelled. Security records are kept for abuse investigation with your identifier removed. |
+| **Delete my account** | Type `DELETE`. Removes the account, creature, stories, memories, preferences, support requests, stored credentials and any creature bot. Queued messages to you are cancelled. Security records are kept for abuse investigation with your identifier removed. |
 
 Both destructive actions require typing the exact word. Neither can be undone, and neither returns
 any of the deleted content in its response.
@@ -97,6 +99,7 @@ Target: acknowledge within 3 days, complete within 30.
 | Delivered outbound messages | Cleared with the same sweep |
 | Security events | Retained for abuse investigation; identifiers removed on deletion |
 | Analytics events | Removed with your account |
+| Support requests | Until closed and no longer needed; removed with your account |
 | Backups | Per [`docs/BACKUP_RESTORE.md`](BACKUP_RESTORE.md); a restore crossing a deletion requires re-applying it |
 
 ## Children

@@ -34,6 +34,10 @@ async function main() {
     assert(enabled.enabled&&enabled.timezone==="Asia/Jerusalem","notification preferences were not saved");
     await client.query(`UPDATE notification_preferences SET next_delivery_at=now()-interval '1 minute' WHERE player_id=$1`,[player.id]);
 
+    // dispatchOutbox and the scheduler both claim work process-wide, and this suite asserts exact
+    // counts. Defer every row that is not this player's; the transaction rolls back either way.
+    await client.query(`UPDATE outbox SET available_at=now()+interval '1 day' WHERE status='pending' AND (player_id IS NULL OR player_id<>$1)`,[player.id]);
+
     const firstSchedule=await scheduleDueDailyReturnNotifications(client);
     const secondSchedule=await scheduleDueDailyReturnNotifications(client);
     assert(firstSchedule===1,"due daily notification was not scheduled");

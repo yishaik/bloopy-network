@@ -31,7 +31,7 @@ and any public or uncontrolled sharing.
 - [ ] `/health` version recorded: `________`
 - [ ] manual gate-A items in [`docs/GO_LIVE.md`](GO_LIVE.md) ticked
 - [ ] backup taken today and the restore drill passed
-- [ ] support handle live and published in the bot's `/start` reply
+- [ ] `/support` tested end to end, and `GET /api/admin/support` is being checked daily — see [`SUPPORT.md`](SUPPORT.md)
 - [ ] privacy copy reachable by a player
 - [ ] tester guidance sent
 
@@ -66,12 +66,13 @@ than the same problem found by ten.
 10. Share the creature card with another Phase-1 tester, follow their link, and confirm exactly one
     mutual encounter is recorded.
 11. Optionally connect OpenRouter, then disconnect, and confirm the authored game is unaffected.
-12. Download the data export and check it reads like your own history and contains no keys.
-13. On one throwaway account only: run **Start over** and confirm a fresh creature appears; then run
+12. Send `/support something small is wrong` and confirm the bot says a human will read it.
+13. Download the data export and check it reads like your own history and contains no keys.
+14. On one throwaway account only: run **Start over** and confirm a fresh creature appears; then run
     **Delete my account** and confirm reopening starts from nothing.
 
-Steps 12 and 13 exist because export and deletion have never been exercised by a real person. Do not
-run step 13 on an account whose story you want to keep.
+Steps 13 and 14 exist because export and deletion have never been exercised by a real person. Do not
+run step 14 on an account whose story you want to keep.
 
 ## Stop conditions
 

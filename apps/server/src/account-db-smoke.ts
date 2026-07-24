@@ -4,6 +4,7 @@ import { seal } from "./crypto.js";
 import { db } from "./db.js";
 import { AppError } from "./errors.js";
 import { attributeReferral, rewardPendingReferral } from "./share.js";
+import { recordSupportRequest } from "./telegram.js";
 
 function assert(condition:unknown,message:string):asserts condition{if(!condition)throw new Error(message)}
 
@@ -12,7 +13,7 @@ const genome=JSON.stringify({body:"round",primary:"#aaaaaa",secondary:"#bbbbbb",
 
 /** Every table that holds player- or creature-scoped rows, with the column that names the owner. */
 const CREATURE_SCOPED=["onboarding_states","story_flags","player_choices","story_entries","memories","quest_instances","world_events","inventory_ledger","story_arc_instances","daily_return_instances","personality_events","memory_audit_events","managed_bots"] as const;
-const PLAYER_SCOPED=["ai_profiles","ai_daily_usage","notification_preferences","player_daily_activity","openrouter_oauth_states"] as const;
+const PLAYER_SCOPED=["ai_profiles","ai_daily_usage","notification_preferences","player_daily_activity","openrouter_oauth_states","support_requests"] as const;
 
 async function countLeftovers(client:import("pg").PoolClient,creatureIds:string[],playerId:string):Promise<string[]>{
   const leftovers:string[]=[];
@@ -59,6 +60,7 @@ async function seedAccount(client:import("pg").PoolClient,telegramUserId:number,
   await client.query(`INSERT INTO outbox (bot_id,chat_id,payload,source_key,player_id,creature_id) VALUES ($1,$2,'{"method":"sendMessage","text":"private message text"}',$3,$4,$5)`,[botId,String(telegramUserId),`seed:${randomUUID()}`,player.id,creature.id]);
   await client.query(`INSERT INTO telegram_updates (source,update_id,payload,status) VALUES ('manager',$1,$2,'completed')`,[Math.floor(Math.random()*2_000_000_000),JSON.stringify({update_id:1,message:{message_id:1,text:"a private note",chat:{id:telegramUserId,type:"private"},from:{id:telegramUserId,first_name:name}}})]);
   await client.query(`INSERT INTO security_events (event_type,bot_id,telegram_user_id,chat_id,details) VALUES ('managed_bot_access_rejected',$1,$2,$2,'{}')`,[botId,telegramUserId]);
+  await client.query(`INSERT INTO support_requests (player_id,telegram_user_id,chat_id,message,source_key) VALUES ($1,$2,$2,'my quiet hours were ignored',$3)`,[player.id,telegramUserId,`support:smoke:${randomUUID()}`]);
   return {playerId:String(player.id),creatureId:String(creature.id)};
 }
 
@@ -90,6 +92,7 @@ async function main(){
     assert((exported.managedBots as unknown[]).length===1,"export did not include managed bot metadata");
     assert(Boolean(exported.notificationPreferences),"export did not include notification preferences");
     assert(Boolean(exported.aiConnection),"export did not include AI connection metadata");
+    assert((exported.supportRequests as unknown[]).length===1,"export did not include the player's support requests");
     for(const secret of ["super-secret-api-key","bot-token-secret","verifier-secret","webhook-secret-value-1234","encrypted_api_key","token_cipher","webhook_secret","verifier_cipher"]){
       assert(!serialized.includes(secret),`export leaked "${secret}"`);
     }
@@ -125,6 +128,18 @@ async function main(){
     assert(newcomerTombstone.rowCount===1&&newcomerTombstone.rows[0].rewarded===true,"resetting the referred creature erased the referral tombstone");
     assert((await rewardPendingReferral(client,newcomer.playerId,newcomer.creatureId))===null,"a reset let the referred player re-earn the referral reward");
 
+    // --- support requests ----------------------------------------------------------------------
+    const supportKey=`support:manager:${Math.floor(Math.random()*2_000_000_000)}`;
+    await recordSupportRequest(client,{playerId:a.playerId,telegramUserId:ownerA,chatId:ownerA,message:"the daily message woke me at 3am",sourceKey:supportKey});
+    await recordSupportRequest(client,{playerId:a.playerId,telegramUserId:ownerA,chatId:ownerA,message:"the daily message woke me at 3am",sourceKey:supportKey});
+    const tickets=await client.query("SELECT count(*)::int AS count FROM support_requests WHERE source_key=$1",[supportKey]);
+    assert(Number(tickets.rows[0].count)===1,"a replayed Telegram update opened a duplicate support ticket");
+    const longRequest=`support:manager:${Math.floor(Math.random()*2_000_000_000)}`;
+    await recordSupportRequest(client,{playerId:a.playerId,telegramUserId:ownerA,chatId:ownerA,message:"x".repeat(5000),sourceKey:longRequest});
+    const stored=await client.query("SELECT length(message) AS length FROM support_requests WHERE source_key=$1",[longRequest]);
+    assert(Number(stored.rows[0].length)===2000,`an oversized support message was stored at ${stored.rows[0].length} characters instead of being clamped`);
+    await client.query("DELETE FROM support_requests WHERE source_key = ANY($1::text[])",[[supportKey,longRequest]]);
+
     // --- creature reset ------------------------------------------------------------------------
     const resetResult=await resetCreature(client,a.playerId);
     assert(resetResult.reset&&resetResult.revokedBotIds.length===1,"reset did not report the revoked bot");
@@ -151,6 +166,7 @@ async function main(){
     assert((await client.query("SELECT 1 FROM managed_bot_access_rules WHERE bot_id=720000002")).rowCount===0,"deletion left managed bot access rules");
     assert((await client.query("SELECT 1 FROM outbox WHERE bot_id=720000002")).rowCount===0,"deletion left queued Telegram messages");
     assert((await client.query("SELECT 1 FROM telegram_updates WHERE payload->'message'->'from'->>'id'=$1",[String(ownerB)])).rowCount===0,"deletion left raw Telegram payloads containing the user");
+    assert((await client.query("SELECT 1 FROM support_requests WHERE telegram_user_id=$1",[ownerB])).rowCount===0,"deletion left support requests containing the player's own words");
     const anonymized=await client.query("SELECT count(*)::int AS count FROM security_events WHERE telegram_user_id=$1",[ownerB]);
     assert(Number(anonymized.rows[0].count)===0,"deletion left the Telegram id on security events");
     const retainedAudit=await client.query("SELECT count(*)::int AS count FROM security_events WHERE bot_id=720000002 AND telegram_user_id IS NULL");

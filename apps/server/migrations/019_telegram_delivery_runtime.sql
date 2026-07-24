@@ -1,6 +1,6 @@
 ALTER TABLE telegram_updates
   ADD COLUMN payload jsonb NOT NULL DEFAULT '{}',
-  ADD COLUMN status text NOT NULL DEFAULT 'received',
+  ADD COLUMN status text NOT NULL DEFAULT 'completed',
   ADD COLUMN attempts integer NOT NULL DEFAULT 0,
   ADD COLUMN available_at timestamptz NOT NULL DEFAULT now(),
   ADD COLUMN lease_token uuid,
@@ -8,6 +8,9 @@ ALTER TABLE telegram_updates
   ADD COLUMN last_error text,
   ADD COLUMN updated_at timestamptz NOT NULL DEFAULT now(),
   ADD COLUMN completed_at timestamptz;
+
+UPDATE telegram_updates SET completed_at=received_at WHERE status='completed' AND completed_at IS NULL;
+ALTER TABLE telegram_updates ALTER COLUMN status SET DEFAULT 'received';
 
 ALTER TABLE telegram_updates
   ADD CONSTRAINT telegram_updates_status_check CHECK (status IN ('received','processing','retryable','completed','failed'));

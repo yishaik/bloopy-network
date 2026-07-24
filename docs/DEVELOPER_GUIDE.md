@@ -2,23 +2,25 @@
 
 ## Overview
 
-Bloopy Network is a TypeScript modular monolith deployed as one service with PostgreSQL persistence, Telegram webhooks, a Mini App, background workers and optional constrained AI narration.
+Bloopy Network is a TypeScript modular monolith deployed as one service with PostgreSQL persistence, Telegram webhooks, a static Mini App, background workers, public share surfaces, self-service account lifecycle controls and optional constrained AI narration.
 
-The architecture intentionally optimizes for:
+The architecture optimizes for:
 
 - low infrastructure cost;
 - clear transactional boundaries;
 - deterministic canonical game state;
 - safe retries and external delivery;
 - staged activation of risky Telegram/social surfaces;
-- the ability to extract modules later without starting with microservices.
+- explicit privacy and account-lifecycle behavior;
+- future extraction seams without premature microservices.
 
-Read these documents before changing behavior:
+Read before changing behavior:
 
 - [Product vision](./PRODUCT.md)
 - [Game design](./GAME_DESIGN.md)
 - [Behavior specification](./BEHAVIOR_SPEC.md)
 - [Architecture](./ARCHITECTURE.md)
+- [API reference](./API.md)
 - [Code style](./CODE_STYLE.md)
 - [Testing](./TESTING.md)
 - [Operations](./OPERATIONS.md)
@@ -29,65 +31,66 @@ Read these documents before changing behavior:
 - TypeScript, ESM and strict type checking
 - Fastify
 - PostgreSQL 17
-- Zod request/config validation
+- Zod validation
 - Vitest
-- Docker Compose for local PostgreSQL
+- Docker Compose
 - Telegram Bot API and Mini Apps
-- Railway for current production deployment
+- Railway
 - optional OpenRouter OAuth and OpenAI-compatible narration providers
 
 ## Repository layout
 
 ```text
 .
-├── apps/
-│   └── server/
-│       ├── public/                 # Mini App static frontend
-│       ├── src/                    # HTTP, game, Telegram, workers and tests
-│       ├── package.json
-│       └── tsconfig.json
-├── docs/                            # product, engineering and operations handbook
-├── migrations/                      # additive PostgreSQL migrations
+├── apps/server/
+│   ├── public/                 # Mini App static frontend
+│   ├── src/                    # API, domain modules, workers and tests
+│   ├── package.json
+│   └── tsconfig.json
+├── docs/                       # product, player, developer and operations handbook
+├── migrations/                 # additive PostgreSQL migrations
+├── scripts/                    # release, backup, restore and verification tooling
 ├── .github/workflows/ci.yml
 ├── .env.example
 ├── docker-compose.yml
-└── package.json                     # workspace scripts
+├── CONTRIBUTING.md
+└── package.json
 ```
 
-Important server modules include:
+Important server responsibilities include:
 
-- `server.ts` — route composition, authentication boundaries and worker loop;
-- `game.ts` — canonical player/creature actions, onboarding and progression;
-- `door-game.ts` — generic authored story-arc engine and current arcs;
-- `memory.ts` — memory controls, personality changes and daily return;
-- `notifications.ts` — timezone-aware scheduling and quiet hours;
-- `telegram.ts` — Telegram manager/managed-bot behavior;
-- `telegram-control.ts` — ownership, consent and bot-interaction protocol;
-- `delivery-runtime.ts` — leased Telegram ingress, outbox and readiness;
-- `ai.ts` / `ai-policy.ts` — bounded narration and budgets;
+- `server.ts` — route composition, auth boundaries, health and worker scheduling;
+- `game.ts` — bootstrap, onboarding, actions, progression and relationships;
+- story-arc modules — authored arc definitions and deterministic choice resolution;
+- `memory.ts` — memories, personality and daily return;
+- `notifications.ts` — local-time scheduling and quiet hours;
+- sharing/referral modules — opaque public cards, safe views and one-time attribution;
+- account lifecycle modules — export, creature reset and account deletion;
+- `telegram.ts` — manager/managed-bot protocol translation;
+- `telegram-control.ts` — ownership, consent and signed bot interactions;
+- `delivery-runtime.ts` — leased ingress, outbox and readiness;
+- `ai.ts` / `ai-policy.ts` — constrained narration and budgets;
 - `openrouter.ts` — OAuth connection lifecycle;
 - `avatar.ts` — deterministic SVG rendering;
-- `worker.ts` — scheduled world events and cleanup;
+- `worker.ts` — scheduled events and cleanup;
 - `errors.ts` — typed player-safe errors;
 - `config.ts` — validated configuration and production guards.
 
-The exact module list evolves. Preserve responsibility boundaries rather than treating `server.ts` as the place for all new logic.
+Preserve module ownership. Do not turn `server.ts` into a general-purpose domain module.
 
 ## Local setup
 
-### Prerequisites
+Requirements:
 
 - Node.js 22+
 - npm
 - Docker with Compose
-- OpenSSL for local key generation
-
-### Start PostgreSQL and the app
+- OpenSSL
 
 ```bash
 cp .env.example .env
 openssl rand -base64 32
-# Paste the result into APP_ENCRYPTION_KEY in .env
+# Paste into APP_ENCRYPTION_KEY
 
 docker compose up postgres -d
 npm install
@@ -97,9 +100,11 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-`DEMO_MODE=true` allows a local demo identity and is rejected in production.
+`DEMO_MODE=true` supports local development and is rejected in production.
 
-### Useful commands
+## Commands
+
+### Normal development
 
 ```bash
 npm run dev
@@ -110,7 +115,7 @@ npm run migrate
 npm run eval:narrative
 ```
 
-Database smoke suites:
+### Database smoke suites
 
 ```bash
 npm run test:memory-db -w @bloopy/server
@@ -118,287 +123,272 @@ npm run test:notifications-db -w @bloopy/server
 npm run test:openrouter-db -w @bloopy/server
 npm run test:telegram-control-db -w @bloopy/server
 npm run test:delivery-runtime-db -w @bloopy/server
+npm run test:account-db
 ```
+
+### Release and recovery tooling
+
+```bash
+npm run release:check -- --base-url https://deployment.example --phase 1
+npm run verify:gate -- --base-url https://deployment.example
+npm run backup
+npm run verify:restore
+```
+
+Read:
+
+- [Go live](./GO_LIVE.md)
+- [Backup and restore](./BACKUP_RESTORE.md)
+- [Alpha testing](./ALPHA_TESTING.md)
+
+`release:check` must distinguish `SKIP` from `PASS`; an unverified check is not healthy evidence.
 
 ## Configuration
 
-Copy `.env.example` and treat it as a schema reference, not production values.
+Treat `.env.example` as a schema reference, not production values.
 
-### Required local values
+Required production values include:
 
 - `DATABASE_URL`
 - `APP_ENCRYPTION_KEY`
-
-### Telegram integration values
-
 - `TELEGRAM_MANAGER_BOT_TOKEN`
 - `TELEGRAM_MANAGER_BOT_USERNAME`
 - `TELEGRAM_WEBHOOK_SECRET`
-- an HTTPS `PUBLIC_BASE_URL` for webhooks
+- HTTPS `PUBLIC_BASE_URL`
+- strong `ADMIN_API_KEY`
 
-### Risky feature flags
-
-These default off in production-oriented configuration:
+Risky surfaces default off:
 
 - `MANAGED_BOT_FLEET_ENABLED`
 - `BOT_TO_BOT_ENABLED`
 - future `BOT_MATCHMAKING_ENABLED`
 
-Do not enable a risky surface merely because CI passes. Follow [Alpha testing](./ALPHA_TESTING.md).
+Do not enable a surface merely because CI passes. Follow the documented human verification gate.
 
-### Secret handling
-
-Never:
-
-- commit `.env`;
-- print tokens or API keys;
-- paste secret values into issues or PRs;
-- return encrypted credentials to the browser;
-- use placeholder secrets in production.
+Never commit `.env`, print credentials, paste secrets into GitHub, return credential ciphertext to the browser or use placeholder production secrets.
 
 ## Request and mutation model
 
-A normal player mutation should follow this shape:
+A normal player mutation should:
 
-1. validate route params and body with Zod;
+1. validate params/body with Zod;
 2. resolve Telegram identity from trusted initData;
-3. load or bootstrap the owning player/creature;
-4. verify onboarding and feature prerequisites;
-5. generate or accept an idempotency key;
-6. perform canonical mutation in a short transaction;
-7. commit canonical facts and rewards;
-8. call optional external narration after the canonical decision when possible;
-9. persist permitted presentation updates separately;
-10. return a player-safe response.
+3. derive ownership server-side;
+4. verify feature and domain prerequisites;
+5. claim a stable idempotency key;
+6. apply canonical mutation in a short transaction;
+7. commit canonical facts/rewards;
+8. call optional AI or external services outside the transaction;
+9. persist permitted presentation/operational results;
+10. return a minimal player-safe response.
 
-Do not call external AI or Telegram APIs while holding a long database transaction.
+Never call AI, Telegram or media providers while holding a long database transaction.
 
 ## Authentication and ownership
 
-### Mini App requests
+### Mini App
 
-The server validates Telegram Mini App `initData`. Managed-bot launches may be signed by a managed-bot token, so validation must remain bot-aware.
+Validate Telegram initData server-side. Managed-bot launches may be signed with the managed bot's token, so validation remains bot-aware.
 
 ### Owner-scoped resources
 
-For resources such as managed bots, memories, invitations and future matchmaking entries:
+For memories, bots, account data, invitations, meetings and matchmaking:
 
-- derive the owner from authenticated Telegram context;
-- never trust a client-supplied owner ID;
-- query through the owner relationship;
-- return `404` or a curated equivalent when ownership should not be disclosed;
-- add negative tests for cross-owner access.
+- derive the owner from auth context;
+- never trust client-supplied owner authority;
+- query through ownership;
+- avoid revealing whether another owner's private resource exists;
+- add cross-owner negative tests.
 
 ### Admin endpoints
 
-Admin endpoints require `ADMIN_API_KEY` and are operational tools, not product APIs. Do not build a player flow that depends on an admin endpoint.
+`ADMIN_API_KEY` protects operational endpoints. A normal player flow must never depend on an admin endpoint.
 
-## Canonical state and narration
+## Canonical state versus presentation
 
-Canonical state includes:
+Canonical state includes identity, progression, currency, inventory, quests, relationships, legal story choices, rewards, memories/personality values, referral payout and social lifecycle state.
 
-- player and creature identity;
-- energy, XP, level and currency;
-- inventory and quests;
-- relationships;
-- legal story choices and route state;
-- rewards and flags;
-- approved memories and personality values;
-- interaction lifecycle state.
-
-Presentation may include:
-
-- story title and body;
-- optional AI-enriched wording;
-- player-safe summaries;
-- transient UI status.
+Presentation includes story wording, public summaries, cards and transient UI status.
 
 The canonical layer must be complete without AI output.
 
 ## Transactions
 
-Use PostgreSQL transactions for state changes that must succeed or fail together.
+Use short transactions for work that must succeed or fail together:
 
-Good transaction scope:
-
-- verify current state;
-- lock the relevant row when concurrent mutation is possible;
-- insert idempotency record;
+- load and lock current state;
+- validate prerequisites;
+- claim idempotency;
 - apply canonical effects;
-- write related story/analytics events that belong to the effect;
+- write related canonical/audit events;
 - commit.
 
-Bad transaction scope:
+Keep outside:
 
-- call Telegram;
-- call OpenRouter or another model provider;
-- wait for user input;
-- process large media;
-- perform slow unrelated reads.
+- Telegram calls;
+- AI calls;
+- media retrieval/analysis;
+- slow third-party requests;
+- file/backup operations.
 
-Use advisory locks or row locks when a logical entity needs serialization. Keep locks narrow and documented.
+Use claim/execute/finalize for external delivery. Use locks in a stable order and never hold them during network calls.
 
 ## Idempotency
 
-Any action that may be retried requires a stable key.
+Any retryable mutation needs a trusted stable key.
 
 Examples:
 
 - Telegram update: source + update ID;
 - managed-bot action: bot ID + update ID;
-- story choice: player/creature + arc instance + beat/choice or explicit command key;
-- notification: one source key per player/date/event;
+- story choice: arc instance + beat/choice command;
+- notification: player/date/event source key;
+- referral: durable referred player;
 - invitation acceptance: invitation + participant;
-- meeting start: accepted invitation ID;
-- matchmaking result: matched queue pair.
+- meeting start: accepted invitation;
+- matchmaking: claimed queue pair;
+- reset/delete: owner plus explicit lifecycle command semantics.
 
-On conflict, return or reconstruct the existing result. Do not silently run the mutation again.
+A conflict returns/reconstructs the existing result. Frontend button disabling is not correctness.
 
 ## Adding a normal action
 
-1. Add the action to the declared action type/schema.
+1. Add it to the declared schema/type.
 2. Define cost, prerequisites and deterministic effects.
-3. Add canonical story fallback.
-4. Ensure one idempotency key covers the complete effect.
-5. Update quest/relationship integrations explicitly.
-6. Add unit tests for legal and illegal states.
-7. Add a concurrency/replay test when rewards are involved.
-8. Update player and behavior documentation.
+3. Add deterministic story fallback.
+4. Cover the whole effect with one idempotency boundary.
+5. Integrate quests/relationships explicitly.
+6. Test legal, illegal, replay and concurrency behavior.
+7. Update player and behavior docs.
 
-## Adding an authored story arc
+## Adding an authored arc
 
-1. Define an arc through the generic arc interface.
-2. Give every beat and choice a stable identifier.
-3. Declare prerequisites and canonical effects.
-4. Provide deterministic title/body fallback for every visible beat.
-5. Keep rewards bounded and idempotent.
-6. Test activation, each branch, resume, completion and replay.
-7. Test inheritance from earlier routes where used.
-8. Confirm optional AI receives canonical facts only.
-9. Add migration data if quests/items are required.
-10. Document the player-facing arc without spoiling hidden branches unnecessarily.
+1. Use the generic arc definition interface.
+2. Give beats/choices stable IDs.
+3. Declare activation, legal choices and effects.
+4. Provide deterministic text for every visible beat.
+5. Keep rewards bounded/idempotent.
+6. Test branches, resume, route inheritance, completion and replay.
+7. Ensure AI receives canonical facts only.
+8. Add migration data for quests/items as needed.
+9. Update game/player documentation.
+
+## Adding a public share surface
+
+Public sharing is an explicit privacy boundary.
+
+1. Use an opaque random token, not a private/owner-derived identifier.
+2. Build a dedicated public view with explicitly selected fields.
+3. Never expose raw domain rows or `SELECT *`.
+4. Render player/AI text safely; no executable injection.
+5. Provide generic not-found behavior.
+6. Define cache policy and token invalidation/reset behavior.
+7. Add privacy-contract tests for excluded fields.
+8. Keep referral reward separate, durable and idempotent.
+
+## Adding export/reset/delete behavior
+
+### Export
+
+- explicitly list every exported field;
+- never implement by serializing whole rows and filtering known secrets afterward;
+- include schema version/timestamp;
+- assert secret names and known test secret values are absent;
+- return `no-store`.
+
+### Reset/delete
+
+- require explicit typed confirmation;
+- resolve account without accidentally bootstrapping during repeated deletion;
+- revoke external managed bots before removing authorization rows;
+- clean non-FK/raw payload data explicitly;
+- anonymize only the minimal retained abuse/operational history;
+- ensure no active scheduled/social work remains orphaned;
+- test fresh bootstrap after reset and idempotent repeated deletion.
 
 ## Adding a migration
 
-Migrations are additive and forward-safe.
+- create a new unique ordered filename;
+- never rename/edit an applied migration;
+- prefer additive changes;
+- backfill before restrictive constraints;
+- provide safe defaults;
+- add needed indexes/check constraints;
+- test from a clean DB;
+- update affected smoke suites;
+- update readiness/release checks if running code depends on it.
 
-Rules:
-
-- use a new unique ordered filename;
-- do not rename an already applied migration;
-- prefer additive columns/tables/indexes;
-- backfill before adding restrictive constraints when needed;
-- provide safe defaults for existing rows;
-- avoid destructive rollback assumptions;
-- run the full migration job from a clean database;
-- add or update a DB smoke suite for behavior that depends on the schema.
-
-Production rollback redeploys application code while retaining additive schema.
+Production rollback redeploys earlier code while retaining additive schema.
 
 ## Adding a Telegram flow
 
-1. Decide whether the update is manager, managed-bot or bot-originated.
-2. Validate webhook secret before persistence.
-3. Persist the full update and return quickly.
-4. Process through the leased ingress worker.
-5. authorize the human or verify the signed bot interaction;
-6. apply canonical effects with a command key;
-7. enqueue replies through the outbox;
-8. never call Telegram directly from canonical game logic;
-9. classify failure as retryable, permanent or uncertain;
-10. expose metrics and a kill switch for risky behavior.
+1. classify manager, managed-human or bot-originated update;
+2. validate webhook secret before persistence;
+3. persist full update and return quickly;
+4. process through leased ingress;
+5. authorize owner/chat or verify signed bot turn;
+6. apply canonical effects using command keys;
+7. enqueue replies through outbox;
+8. classify retryable/permanent/uncertain delivery;
+9. expose metrics and a narrow kill switch;
+10. complete real Telegram E2E before enabling broadly.
 
 ## Adding AI narration
 
-1. Define the canonical facts and allowed references.
-2. Limit memory context to the approved packet.
-3. reserve budget before the call;
-4. use strict timeouts and output limits;
-5. validate and moderate returned text;
-6. log metadata without secrets or raw credentials;
+1. fix canonical facts first;
+2. define allowed references and bounded memory;
+3. reserve budget;
+4. use strict timeouts/output limits;
+5. validate/moderate output;
+6. log metadata without credentials/content leakage;
 7. provide deterministic fallback;
-8. never let model output decide state.
+8. never allow model output to decide state.
 
 ## Frontend development
 
 The Mini App is served from `apps/server/public`.
 
-Frontend principles:
-
-- treat the server as the source of truth;
-- render explicit loading, empty, disabled, success and error states;
-- prevent double submission locally but rely on server idempotency for correctness;
-- never store bot tokens or AI credentials in browser storage;
-- use Telegram safe-area information where available;
+- server remains source of truth;
+- render loading, empty, disabled, success and error states;
+- block double-submit for UX but rely on server idempotency;
+- never store bot/AI credentials in browser storage;
+- use Telegram safe areas;
 - keep copy concise and translation-friendly;
-- avoid exposing internal UUIDs, bot IDs, signatures or queue statuses directly;
-- stop polling when the app is backgrounded or state is terminal;
-- support reduced motion and semantic status announcements.
+- hide internal UUIDs, signatures and queue protocol;
+- stop polling in background/terminal states;
+- support reduced motion and semantic status announcements;
+- destructive account actions require clear confirmation and aftermath explanation.
 
-## Error handling
+## Errors
 
-Throw `AppError` for expected domain failures.
+Expected domain failures use `AppError` with stable code, HTTP status and curated message. Do not infer errors by matching arbitrary strings or expose SQL/Zod/provider internals.
 
-Each expected error needs:
+Unexpected failures are logged safely and returned as generic internal errors.
 
-- stable machine code;
-- appropriate HTTP status;
-- curated player-facing message.
+## Analytics and audit events
 
-Do not match arbitrary error strings in the global handler. Unexpected failures should be logged server-side and returned as a generic internal message.
+Use small privacy-safe metadata: stable event name, feature/scene code, state, duration, attempt count and opaque reference.
 
-## Analytics and operational events
+Never log raw private messages/media, tokens, keys, initData, OAuth verifier/state or another owner's private identifier.
 
-Analytics should answer product questions without becoming a private-content archive.
+Canonical analytics should be idempotent. Operational changes/replays belong in operational audit events. Account lifecycle actions use a one-way/anonymized subject reference where history must survive deletion.
 
-Good properties:
+## Documentation requirements
 
-- scene or action ID;
-- feature mode;
-- success/failure code;
-- latency bucket;
-- turn count;
-- anonymous/opaque interaction ID where operationally required.
-
-Do not log:
-
-- raw private messages;
-- bot tokens;
-- API keys;
-- Telegram initData;
-- OAuth verifier/state;
-- full media content;
-- another owner's private identifier.
-
-Operational control changes and manual delivery replays belong in `operational_events`.
-
-## Documentation changes required with code
-
-Update documentation in the same PR when changing:
-
-- a player-visible rule or flow;
-- an API contract;
-- a migration or persistence invariant;
-- a feature flag;
-- a privacy or authorization boundary;
-- notification behavior;
-- AI capabilities;
-- deployment, health or recovery steps.
+Update docs in the same PR when changing player behavior, public API, migration/readiness contract, feature flag, privacy/ownership, notification, AI authority, release tooling or recovery.
 
 ## Pull request checklist
 
-Before requesting review:
-
-- [ ] scope is linked to an issue or clearly explained;
-- [ ] strict TypeScript passes;
-- [ ] unit tests pass;
-- [ ] production build passes;
-- [ ] clean migrations pass when schema is touched;
-- [ ] relevant DB smoke suites pass;
-- [ ] duplicate/retry behavior is tested;
-- [ ] cross-owner authorization is tested for social/private resources;
-- [ ] secrets and private fields are absent from responses/logs;
-- [ ] player failure states are implemented;
-- [ ] documentation is updated;
-- [ ] Railway handoff is included when production configuration changes;
-- [ ] rollback or kill-switch behavior is documented.
+- [ ] scope linked/explained;
+- [ ] strict TypeScript, unit tests and build pass;
+- [ ] clean migrations pass when relevant;
+- [ ] affected DB smoke suites, including account lifecycle where relevant, pass;
+- [ ] backup/restore and release tooling updated when schema/release behavior changes;
+- [ ] replay/concurrency tested;
+- [ ] cross-owner authorization tested;
+- [ ] public/export response privacy tested;
+- [ ] no secrets/private fields in responses/logs;
+- [ ] player failure states implemented;
+- [ ] docs updated;
+- [ ] Railway handoff included for infrastructure changes;
+- [ ] rollback/kill switch documented.

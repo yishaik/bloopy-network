@@ -1,6 +1,6 @@
 # Bloopy Network
 
-A proactive Telegram-native creature game with persistent identity, authored adventures, evolving memory/personality, managed personal bots, bounded creature-to-creature meetings and optional constrained AI narration.
+A proactive Telegram-native creature game with persistent identity, authored adventures, evolving memory/personality, shareable creature stories, managed personal bots, bounded creature-to-creature meetings and optional constrained AI narration.
 
 Bloopy is not a generic chatbot. Players adopt a recognizable creature that accumulates stories, relationships, items and visible evolution across short Telegram sessions.
 
@@ -28,10 +28,13 @@ Bloopy is not a generic chatbot. Players adopt a recognizable creature that accu
 - editable memories and gradual personality changes
 - daily-return scenes and opt-in quiet-hour notifications
 - shared-link player-to-player encounters
+- shareable profile/story cards and one-time referral attribution
+- self-service data export, creature reset and account deletion
 - optional OpenRouter Connected Mind and compatible BYOK narration
 - durable leased Telegram ingress and outbox delivery
 - retry, uncertain-delivery, dead-letter and recovery states
 - health/readiness, degraded mode and operational controls
+- verified backup/restore drill and automated release preflight
 - managed-bot ownership/access/rotation/revoke foundation
 - persisted signed bounded bot-to-bot protocol
 
@@ -46,7 +49,7 @@ The player-facing roadmap includes:
 - active meeting transcript/history;
 - safe pseudonymous stranger matchmaking;
 - photo, voice-note, video and link reactions;
-- shareable cards and self-service data controls;
+- richer share cards and social history;
 - reusable World Packs.
 
 Planned behavior is documented clearly as planned and must not be presented as shipped.
@@ -78,26 +81,33 @@ npm test
 npm run build
 ```
 
-Database smoke suites:
-
-```bash
-npm run test:memory-db -w @bloopy/server
-npm run test:notifications-db -w @bloopy/server
-npm run test:openrouter-db -w @bloopy/server
-npm run test:telegram-control-db -w @bloopy/server
-npm run test:delivery-runtime-db -w @bloopy/server
-```
+Database and release validation are documented in [`docs/TESTING.md`](docs/TESTING.md). CI runs all unit tests, database smoke suites and the backup/restore drill.
 
 ## Connect Telegram
 
 1. Create a manager bot.
 2. Enable Bot Management Mode and Bot-to-Bot Communication Mode in BotFather.
-3. Set `TELEGRAM_MANAGER_BOT_TOKEN`, `TELEGRAM_MANAGER_BOT_USERNAME`, an HTTPS `PUBLIC_BASE_URL` and a random `TELEGRAM_WEBHOOK_SECRET`.
+3. Set `TELEGRAM_MANAGER_BOT_TOKEN`, `TELEGRAM_MANAGER_BOT_USERNAME`, an HTTPS `PUBLIC_BASE_URL`, a random `TELEGRAM_WEBHOOK_SECRET` and a strong `ADMIN_API_KEY` for production.
 4. The server registers the manager webhook automatically.
 5. Keep `MANAGED_BOT_FLEET_ENABLED=false` and `BOT_TO_BOT_ENABLED=false` until the corresponding gates in [`docs/ALPHA_TESTING.md`](docs/ALPHA_TESTING.md) pass.
 6. When enabled for a staged cohort, `/spawn` or the Mini App flow can create a managed bot owned by the user and operated by Bloopy.
 
 Never commit or publish bot tokens, API keys, Telegram initData, webhook secrets or decrypted credentials.
+
+## Going live
+
+```bash
+ADMIN_API_KEY=… npm run release:check -- --base-url https://your-deployment --phase 1
+```
+
+The preflight verifies health, version, runtime flags, queue health and the migration ledger and exits non-zero if anything fails.
+
+Start with:
+
+- [`docs/GO_LIVE.md`](docs/GO_LIVE.md)
+- [`docs/PHASE1_ALPHA.md`](docs/PHASE1_ALPHA.md)
+- [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md)
+- [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
 
 ## Architecture
 
@@ -129,7 +139,9 @@ Start with [`docs/README.md`](docs/README.md).
 
 - [`docs/PLAYER_GUIDE.md`](docs/PLAYER_GUIDE.md)
 - [`docs/PLAYER_GUIDE_HE.md`](docs/PLAYER_GUIDE_HE.md)
+- [`docs/PRIVACY.md`](docs/PRIVACY.md)
 - [`docs/PRIVACY_AND_SAFETY.md`](docs/PRIVACY_AND_SAFETY.md)
+- [`docs/SUPPORT.md`](docs/SUPPORT.md)
 - [`docs/ALPHA_TESTING.md`](docs/ALPHA_TESTING.md)
 
 ### Product and design
@@ -144,8 +156,10 @@ Start with [`docs/README.md`](docs/README.md).
 - [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md)
 - [`docs/CODE_STYLE.md`](docs/CODE_STYLE.md)
 - [`docs/TESTING.md`](docs/TESTING.md)
+- [`docs/API.md`](docs/API.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+- [`docs/RAILWAY_DEPLOY.md`](docs/RAILWAY_DEPLOY.md)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ## Contribution rule

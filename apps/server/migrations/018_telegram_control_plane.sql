@@ -19,9 +19,10 @@ CREATE TABLE managed_bot_access_rules (
   enabled boolean NOT NULL DEFAULT true,
   created_by_owner_telegram_user_id bigint NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(bot_id,chat_id,telegram_user_id)
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE UNIQUE INDEX managed_bot_access_rules_unique_idx
+  ON managed_bot_access_rules(bot_id,chat_id,telegram_user_id) NULLS NOT DISTINCT;
 CREATE INDEX managed_bot_access_rules_lookup_idx
   ON managed_bot_access_rules(bot_id,chat_id,telegram_user_id)
   WHERE enabled=true;
